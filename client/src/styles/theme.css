@@ -246,12 +246,32 @@ a { color: inherit; }
 }
 
 .map-frame {
+  position: relative;
   border-radius: 18px;
   overflow: hidden;
   border: 1px solid var(--border);
-  height: 380px;
+  height: 460px;
   box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+  transition: height 0.2s ease;
 }
+.map-frame-expanded { height: 78vh; }
+
+.map-expand-btn {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 500; /* above Leaflet panes */
+  background: rgba(12,10,22,0.85);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  backdrop-filter: blur(4px);
+}
+.map-expand-btn:hover { border-color: var(--gold); color: var(--gold-bright); }
 
 .bet-slip {
   background: var(--panel);

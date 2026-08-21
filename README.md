@@ -13,7 +13,7 @@ the map — closer guesses pay out bigger multipliers, misses lose the bet.
 ## Stack
 
 - **Server**: Node.js, Express, Socket.IO, SQLite (Node's built-in `node:sqlite`), JWT auth
-- **Client**: React (Vite), React Router, Leaflet/OpenStreetMap, Google Maps Street View, Framer Motion, Socket.IO client
+- **Client**: React (Vite), React Router, Leaflet with CARTO Voyager tiles, Google Maps Street View, Framer Motion, Socket.IO client
 
 ## How a round works
 
@@ -47,20 +47,23 @@ the map — closer guesses pay out bigger multipliers, misses lose the bet.
 Bets range from 500 to 100,000 chips. Out of chips? "Add Chips" has six fake
 purchase bundles from 500 to 150,000 chips — again, no real payment happens.
 
-## 1v1 Duels
+## Multiplayer
 
-The **Duel** tab is real-time head-to-head play over Socket.IO, not solo vs.
-the house:
+The **Multiplayer** tab is real-time play against your friends over
+Socket.IO — up to 8 people in one room:
 
-1. Create a duel and pick a bet — you get a 5-character room code to send a
-   friend (Discord, text, whatever).
-2. They open Duel → Join and enter the code. Both players ready up.
-3. Once both are ready, the bet is deducted from both and a single shared
-   location (Street View or landmark photo, same rules as solo) is dealt to
-   both players at once, same clock.
-4. Whoever guesses closer wins — the winner takes both bets (2x their stake),
-   a tie refunds each their own bet. Disconnecting mid-round without guessing
-   counts as a forfeit so your opponent isn't stuck waiting forever.
+1. Create a room and pick the ante — you get a 5-character code to share
+   (Discord, text, whatever).
+2. Everyone else opens Multiplayer → Join and enters the code. The lobby
+   shows who's in.
+3. The host hits **Start Round**. Every player is charged the ante, and all
+   of them get the same location on the same clock at the same moment.
+4. Closest guess takes the whole pot. Exact ties split it; if nobody guesses
+   at all, everyone is refunded. Not guessing in time (or disconnecting
+   mid-round) simply loses your ante rather than stalling the round.
+5. The results screen ranks every player by distance and plots all their
+   pins on the map next to the real spot. The room then drops back to the
+   lobby so you can immediately play another round together.
 
 ## Running locally
 
@@ -138,7 +141,7 @@ Using [Render](https://render.com) (free web service tier):
    HTTP-referrer restriction, use your Render URL instead of localhost, e.g.
    `your-app-name.onrender.com/*`.
 5. Deploy. Render gives you a permanent `https://your-app-name.onrender.com`
-   URL — that's the link anyone can open to play or join a duel.
+   URL — that's the link anyone can open to play or join your room.
 
 Note: the free tier's SQLite file is not guaranteed to persist across
 redeploys (it does survive the service sleeping/waking from inactivity) — so

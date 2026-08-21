@@ -4,7 +4,7 @@ import { SocketProvider } from "./context/SocketContext";
 import Navbar from "./components/Navbar";
 import Auth from "./pages/Auth";
 import Game from "./pages/Game";
-import Duel from "./pages/Duel";
+import Multiplayer from "./pages/Multiplayer";
 import Leaderboard from "./pages/Leaderboard";
 
 function PrivateRoute({ children }) {
@@ -31,10 +31,10 @@ function Shell() {
             }
           />
           <Route
-            path="/duel"
+            path="/multiplayer"
             element={
               <PrivateRoute>
-                <Duel />
+                <Multiplayer />
               </PrivateRoute>
             }
           />

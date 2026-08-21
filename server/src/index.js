@@ -15,7 +15,7 @@ import { haversineKm, scoreFromDistance, resolveBet } from "./scoring.js";
 import { getLocationPhoto } from "./photo.js";
 import { startLiveFeed } from "./liveFeed.js";
 import { STREET_VIEW_ENABLED, findRandomPanorama, reverseGeocode, diagnose } from "./streetview.js";
-import { registerDuelHandlers, duels } from "./duels.js";
+import { registerRoomHandlers, rooms } from "./rooms.js";
 
 const app = express();
 app.use(cors());
@@ -286,6 +286,22 @@ app.get("/api/leaderboard", (req, res) => {
   res.json({ leaderboard: rows });
 });
 
+app.get(
+  "/api/room/:code/photo",
+  authMiddleware,
+  ah(async (req, res) => {
+    const room = rooms.get((req.params.code || "").toUpperCase());
+    if (!room || !room.players.has(req.userId) || room.location?.mode !== "photo") {
+      return res.status(404).end();
+    }
+    const location = LOCATIONS.find((l) => l.id === room.location.locationId);
+    const { buffer, contentType } = await getLocationPhoto(location);
+    res.set("Content-Type", contentType);
+    res.set("Cache-Control", "private, max-age=3600");
+    res.send(buffer);
+  })
+);
+
 // Serve the built client (npm run build in ../client) so one deployed
 // service is both the API and the site — no separate frontend host, no
 // cross-origin setup needed. No-op locally if the client hasn't been built,
@@ -298,23 +314,6 @@ if (fs.existsSync(clientDist)) {
     res.sendFile(path.join(clientDist, "index.html"));
   });
 }
-
-app.get(
-  "/api/duel/:code/photo",
-  authMiddleware,
-  ah(async (req, res) => {
-    const duel = duels.get((req.params.code || "").toUpperCase());
-    const isParticipant =
-      duel && (duel.host?.userId === req.userId || duel.guest?.userId === req.userId);
-    if (!duel || !isParticipant || duel.location?.mode !== "photo") return res.status(404).end();
-
-    const location = LOCATIONS.find((l) => l.id === duel.location.locationId);
-    const { buffer, contentType } = await getLocationPhoto(location);
-    res.set("Content-Type", contentType);
-    res.set("Cache-Control", "private, max-age=3600");
-    res.send(buffer);
-  })
-);
 
 // Safety net: turn any uncaught route error into a JSON response (with the
 // message in dev) instead of a bare 500 that the client can't show.
@@ -332,7 +331,7 @@ io.on("connection", (socket) => {
   socket.emit("hello", { message: "connected to kockam live feed" });
 });
 
-registerDuelHandlers(io);
+registerRoomHandlers(io);
 startLiveFeed(io);
 
 server.listen(PORT, () => {
