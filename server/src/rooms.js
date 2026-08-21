@@ -216,12 +216,23 @@ export function registerRoomHandlers(io) {
     };
     const currentRoom = () => rooms.get(socketToCode.get(socket.id));
 
+    // A player belongs in one room at a time. Before creating or joining,
+    // clear any seat they still hold elsewhere so they don't linger as a
+    // ghost the others have to wait on.
+    const leaveOtherRooms = (exceptCode) => {
+      for (const room of [...rooms.values()]) {
+        if (room.code === exceptCode) continue;
+        if (room.players.has(socket.userId)) removePlayer(io, room, socket.userId);
+      }
+    };
+
     socket.on("room:create", ({ betAmount } = {}, cb) => {
       if (needsAuth(cb)) return;
       if (!Number.isFinite(betAmount) || betAmount <= 0) return cb?.({ error: "Invalid bet" });
       const user = getUser(socket.userId);
       if (user.balance < betAmount) return cb?.({ error: "Insufficient balance" });
 
+      leaveOtherRooms(null);
       const code = randomCode();
       const room = {
         code,
@@ -249,13 +260,30 @@ export function registerRoomHandlers(io) {
       if (needsAuth(cb)) return;
       const room = rooms.get((code || "").toUpperCase());
       if (!room) return cb?.({ error: "Room not found" });
-      if (room.players.has(socket.userId)) return cb?.({ error: "You're already in this room" });
+
+      // Already a member? This is a reconnect (dropped socket, refreshed
+      // tab, flaky connection) rather than a second player — reattach the
+      // new socket to their existing seat instead of turning them away.
+      const existing = room.players.get(socket.userId);
+      if (existing) {
+        if (existing.socketId && existing.socketId !== socket.id) {
+          socketToCode.delete(existing.socketId);
+        }
+        existing.socketId = socket.id;
+        existing.connected = true;
+        socketToCode.set(socket.id, room.code);
+        cb?.({ code: room.code, bet: room.bet, rejoined: true });
+        broadcastState(io, room);
+        return;
+      }
+
       if (room.status === "playing") return cb?.({ error: "That round already started — try again in a moment" });
       if (room.players.size >= MAX_PLAYERS) return cb?.({ error: `Room is full (${MAX_PLAYERS} players)` });
 
       const user = getUser(socket.userId);
       if (user.balance < room.bet) return cb?.({ error: "Insufficient balance for this room's bet" });
 
+      leaveOtherRooms(room.code);
       room.players.set(socket.userId, {
         userId: socket.userId,
         username: user.username,
