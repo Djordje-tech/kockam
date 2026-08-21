@@ -5,14 +5,14 @@ import BetSlip from "../components/BetSlip";
 import GuessMap from "../components/GuessMap";
 import RevealModal from "../components/RevealModal";
 import LiveFeed from "../components/LiveFeed";
-import StreetViewPanel from "../components/StreetViewPanel";
+import MapillaryPanel from "../components/MapillaryPanel";
 import TopUpModal from "../components/TopUpModal";
 
 export default function Game() {
   const { user, updateBalance } = useAuth();
-  const [config, setConfig] = useState({ betOptions: [25, 100, 500, 1000, 2500], timeLimitSec: 20 });
-  const [selectedBet, setSelectedBet] = useState(100);
-  const [round, setRound] = useState(null); // { roundId, betAmount, mode, panoId }
+  const [config, setConfig] = useState({ betOptions: [500, 1000, 2500, 5000], timeLimitSec: 20 });
+  const [selectedBet, setSelectedBet] = useState(1000);
+  const [round, setRound] = useState(null); // { roundId, betAmount, mode, imageId }
   const [pin, setPin] = useState(null);
   const [timeLeft, setTimeLeft] = useState(0);
   const [reveal, setReveal] = useState(null);
@@ -61,7 +61,7 @@ export default function Game() {
         roundId: res.data.roundId,
         betAmount: selectedBet,
         mode: res.data.mode,
-        panoId: res.data.panoId,
+        imageId: res.data.imageId,
       };
       roundRef.current = newRound;
       setRound(newRound);
@@ -157,8 +157,8 @@ export default function Game() {
           )}
 
           <div className="photo-frame">
-            {round && round.mode === "streetview" && (
-              <StreetViewPanel panoId={round.panoId} apiKey={config.googleMapsBrowserKey} />
+            {round && round.mode === "mapillary" && (
+              <MapillaryPanel imageId={round.imageId} accessToken={config.mapillaryAccessToken} />
             )}
             {round && round.mode === "photo" && photoSrc && <img src={photoSrc} alt="Guess the location" />}
             {round && round.mode === "photo" && !photoSrc && (

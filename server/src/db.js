@@ -45,10 +45,10 @@ db.exec(`
   );
 `);
 
-// Migration for databases created before Street View mode existed: those
-// have location_id/location_name as NOT NULL, which breaks inserting a
-// streetview round (which has no landmark id/name). SQLite can't just drop a
-// NOT NULL constraint, so rebuild the table when that's detected.
+// Migration for databases created before the walkable-imagery mode existed:
+// those have location_id/location_name as NOT NULL, which breaks inserting a
+// round with no landmark id/name. SQLite can't just drop a NOT NULL
+// constraint, so rebuild the table when that's detected.
 const roundsInfo = db.prepare("PRAGMA table_info(rounds)").all();
 const locationIdCol = roundsInfo.find((c) => c.name === "location_id");
 const hasMode = roundsInfo.some((c) => c.name === "mode");

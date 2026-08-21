@@ -14,7 +14,7 @@ import { randomLocation, LOCATIONS } from "./locations.js";
 import { haversineKm, scoreFromDistance, resolveBet } from "./scoring.js";
 import { getLocationPhoto } from "./photo.js";
 import { startLiveFeed } from "./liveFeed.js";
-import { STREET_VIEW_ENABLED, findRandomPanorama, reverseGeocode } from "./streetview.js";
+import { MAPILLARY_ENABLED, findRandomMapillaryImage, reverseGeocode } from "./mapillary.js";
 import { registerDuelHandlers, duels } from "./duels.js";
 
 const app = express();
@@ -25,7 +25,7 @@ const STARTING_BALANCE = 5000;
 const DAILY_BONUS = 1000;
 const ROUND_TIME_LIMIT_SEC = 20;
 const BET_OPTIONS = [500, 1000, 2500, 5000, 10000, 25000, 50000, 100000];
-const GOOGLE_MAPS_BROWSER_KEY = process.env.GOOGLE_MAPS_BROWSER_KEY || "";
+const MAPILLARY_ACCESS_TOKEN = process.env.MAPILLARY_ACCESS_TOKEN || "";
 
 function publicUser(row) {
   return { id: row.id, username: row.username, balance: row.balance };
@@ -117,8 +117,8 @@ app.get("/api/config", (req, res) => {
     betOptions: BET_OPTIONS,
     timeLimitSec: ROUND_TIME_LIMIT_SEC,
     startingBalance: STARTING_BALANCE,
-    streetViewEnabled: STREET_VIEW_ENABLED,
-    googleMapsBrowserKey: STREET_VIEW_ENABLED ? GOOGLE_MAPS_BROWSER_KEY : "",
+    mapillaryEnabled: MAPILLARY_ENABLED,
+    mapillaryAccessToken: MAPILLARY_ENABLED ? MAPILLARY_ACCESS_TOKEN : "",
   });
 });
 
@@ -130,11 +130,12 @@ app.post("/api/round/start", authMiddleware, ah(async (req, res) => {
   const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.userId);
   if (user.balance < betAmount) return res.status(400).json({ error: "Insufficient balance" });
 
-  // Prefer a real, walkable Street View panorama; fall back to the curated
-  // landmark-photo mode if no API key is configured or none was found.
-  const pano = STREET_VIEW_ENABLED ? await findRandomPanorama() : null;
-  const mode = pano ? "streetview" : "photo";
-  const location = pano ? null : randomLocation();
+  // Prefer a real, walkable Mapillary street-level image; fall back to the
+  // curated landmark-photo mode if no access token is configured or none
+  // was found nearby.
+  const image = MAPILLARY_ENABLED ? await findRandomMapillaryImage() : null;
+  const mode = image ? "mapillary" : "photo";
+  const location = image ? null : randomLocation();
 
   const newBalance = user.balance - betAmount;
   db.prepare("UPDATE users SET balance = ? WHERE id = ?").run(newBalance, user.id);
@@ -147,11 +148,11 @@ app.post("/api/round/start", authMiddleware, ah(async (req, res) => {
     .run(
       user.id,
       mode,
-      pano ? null : location.id,
-      pano ? null : location.name,
-      pano ? pano.panoId : null,
-      pano ? pano.lat : location.lat,
-      pano ? pano.lng : location.lng,
+      image ? null : location.id,
+      image ? null : location.name,
+      image ? image.id : null,
+      image ? image.lat : location.lat,
+      image ? image.lng : location.lng,
       betAmount
     );
 
@@ -161,7 +162,7 @@ app.post("/api/round/start", authMiddleware, ah(async (req, res) => {
     betAmount,
     timeLimitSec: ROUND_TIME_LIMIT_SEC,
     photoUrl: mode === "photo" ? `/round/${info.lastInsertRowid}/photo` : null,
-    panoId: mode === "streetview" ? pano.panoId : null,
+    imageId: mode === "mapillary" ? image.id : null,
     balance: newBalance,
   });
 }));
@@ -179,7 +180,7 @@ app.get("/api/round/:id/photo", authMiddleware, ah(async (req, res) => {
 }));
 
 async function resolveLocationLabel(round) {
-  if (round.mode === "streetview") {
+  if (round.mode === "mapillary") {
     return (await reverseGeocode(round.lat, round.lng)) || "Unknown location";
   }
   return round.location_name;
