@@ -108,3 +108,32 @@ With it, rounds use real Google Street View panoramas you can walk around in.
 If the metadata lookup can't find coverage near a random spot, or the key
 isn't set, the server transparently falls back to the landmark-photo mode —
 nothing breaks either way.
+
+## Deploying for free (so anyone can join, not just localhost)
+
+The server can serve the built client itself — one deployed service is both
+the site and the API/Socket.IO backend, so there's no separate frontend host
+or CORS setup to worry about.
+
+Using [Render](https://render.com) (free web service tier):
+
+1. Push this repo to your own GitHub (already done if you're reading this
+   from the repo).
+2. On Render: **New +** → **Web Service** → connect this GitHub repo.
+3. Settings:
+   - **Build Command**: `cd client && npm install && npm run build && cd ../server && npm install`
+   - **Start Command**: `cd server && npm start`
+   - **Instance type**: Free
+4. Add environment variables (same names as `server/.env.example`):
+   `JWT_SECRET` (any long random string), and optionally `GOOGLE_MAPS_API_KEY`
+   / `GOOGLE_MAPS_BROWSER_KEY` for real Street View. For the browser key's
+   HTTP-referrer restriction, use your Render URL instead of localhost, e.g.
+   `your-app-name.onrender.com/*`.
+5. Deploy. Render gives you a permanent `https://your-app-name.onrender.com`
+   URL — that's the link anyone can open to play or join a duel.
+
+Note: the free tier's SQLite file is not guaranteed to persist across
+redeploys (it does survive the service sleeping/waking from inactivity) — so
+treat accounts/balances there as disposable for a demo, not something to
+build a real balance on long-term. For real persistence, add Render's paid
+persistent disk add-on and point `server/src/db.js` at that mount path.

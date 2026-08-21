@@ -2,6 +2,9 @@ import "dotenv/config";
 import express from "express";
 import cors from "cors";
 import http from "node:http";
+import path from "node:path";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
 import bcrypt from "bcryptjs";
 
@@ -272,6 +275,19 @@ app.get("/api/leaderboard", (req, res) => {
     .all();
   res.json({ leaderboard: rows });
 });
+
+// Serve the built client (npm run build in ../client) so one deployed
+// service is both the API and the site — no separate frontend host, no
+// cross-origin setup needed. No-op locally if the client hasn't been built,
+// since the Vite dev server handles the frontend there instead.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const clientDist = path.join(__dirname, "..", "..", "client", "dist");
+if (fs.existsSync(clientDist)) {
+  app.use(express.static(clientDist));
+  app.get(/^(?!\/api).*/, (req, res) => {
+    res.sendFile(path.join(clientDist, "index.html"));
+  });
+}
 
 app.get(
   "/api/duel/:code/photo",
