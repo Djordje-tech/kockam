@@ -11,7 +11,14 @@ export function SocketProvider({ children }) {
   const [socket, setSocket] = useState(null);
 
   useEffect(() => {
-    const s = io({ path: "/socket.io", auth: token ? { token } : {} });
+    // Try WebSocket first rather than the default long-polling handshake:
+    // hosting proxies are far more reliable with a straight WS upgrade, and
+    // polling still remains as an automatic fallback.
+    const s = io({
+      path: "/socket.io",
+      auth: token ? { token } : {},
+      transports: ["websocket", "polling"],
+    });
     socketRef.current = s;
     setSocket(s);
     s.on("live-feed", (event) => {

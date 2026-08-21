@@ -308,11 +308,23 @@ app.get(
 // since the Vite dev server handles the frontend there instead.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const clientDist = path.join(__dirname, "..", "..", "client", "dist");
-if (fs.existsSync(clientDist)) {
+const clientBuilt = fs.existsSync(path.join(clientDist, "index.html"));
+
+if (clientBuilt) {
   app.use(express.static(clientDist));
-  app.get(/^(?!\/api).*/, (req, res) => {
+  // Hand every non-API, non-socket path to the SPA so client-side routes
+  // (/play, /multiplayer, …) survive a refresh. Socket.IO attaches to the
+  // raw HTTP server and answers first, but excluding it here too means a
+  // misrouted handshake fails loudly instead of quietly receiving HTML.
+  app.get(/^(?!\/(api|socket\.io)\/?).*/, (req, res) => {
     res.sendFile(path.join(clientDist, "index.html"));
   });
+} else {
+  console.warn(
+    `[server] No built client at ${clientDist} — serving the API only.\n` +
+      `[server] In production run 'npm run build' in client/ before starting;\n` +
+      `[server] locally that's expected, the Vite dev server serves the frontend.`
+  );
 }
 
 // Safety net: turn any uncaught route error into a JSON response (with the
@@ -336,4 +348,7 @@ startLiveFeed(io);
 
 server.listen(PORT, () => {
   console.log(`kockam server listening on :${PORT}`);
+  console.log(`[server] site: ${clientBuilt ? "serving built client" : "API only (no client build found)"}`);
+  console.log(`[server] street view: ${STREET_VIEW_ENABLED ? "enabled" : "disabled (no GOOGLE_MAPS_API_KEY)"}`);
+  console.log(`[server] socket.io: mounted at /socket.io`);
 });
