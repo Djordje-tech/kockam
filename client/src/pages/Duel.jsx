@@ -3,7 +3,7 @@ import { api } from "../api";
 import { useAuth } from "../context/AuthContext";
 import { useSocket } from "../context/SocketContext";
 import { formatChips } from "../format";
-import MapillaryPanel from "../components/MapillaryPanel";
+import StreetViewPanel from "../components/StreetViewPanel";
 import GuessMap from "../components/GuessMap";
 
 function emitAsync(socket, event, payload) {
@@ -18,7 +18,7 @@ function emitAsync(socket, event, payload) {
 export default function Duel() {
   const { user, updateBalance } = useAuth();
   const socket = useSocket();
-  const [config, setConfig] = useState({ betOptions: [500, 1000, 2500, 5000], mapillaryAccessToken: "" });
+  const [config, setConfig] = useState({ betOptions: [500, 1000, 2500, 5000], googleMapsBrowserKey: "" });
 
   const [duelState, setDuelState] = useState(null); // last duel:state payload
   const [roundData, setRoundData] = useState(null); // duel:start payload
@@ -262,8 +262,8 @@ export default function Duel() {
         {duelState && status === "playing" && roundData && !resultData && (
           <div>
             <div className="photo-frame" style={{ marginBottom: 16 }}>
-              {roundData.mode === "mapillary" && (
-                <MapillaryPanel imageId={roundData.imageId} accessToken={config.mapillaryAccessToken} />
+              {roundData.mode === "streetview" && (
+                <StreetViewPanel panoId={roundData.panoId} apiKey={config.googleMapsBrowserKey} />
               )}
               {roundData.mode === "photo" && photoSrc && <img src={photoSrc} alt="Guess the location" />}
               {roundData.mode === "photo" && !photoSrc && (

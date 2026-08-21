@@ -2,7 +2,7 @@ import { db } from "./db.js";
 import { verifyToken } from "./auth.js";
 import { randomLocation } from "./locations.js";
 import { haversineKm } from "./scoring.js";
-import { MAPILLARY_ENABLED, findRandomMapillaryImage, reverseGeocode } from "./mapillary.js";
+import { STREET_VIEW_ENABLED, findRandomPanorama, reverseGeocode } from "./streetview.js";
 
 const DUEL_TIME_LIMIT_SEC = 20;
 const CODE_CHARS = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O/1/I to avoid confusion
@@ -56,8 +56,8 @@ function broadcastState(io, duel) {
 }
 
 async function pickLocation() {
-  const image = MAPILLARY_ENABLED ? await findRandomMapillaryImage() : null;
-  if (image) return { mode: "mapillary", lat: image.lat, lng: image.lng, imageId: image.id };
+  const pano = STREET_VIEW_ENABLED ? await findRandomPanorama() : null;
+  if (pano) return { mode: "streetview", lat: pano.lat, lng: pano.lng, panoId: pano.panoId };
   const loc = randomLocation();
   return { mode: "photo", lat: loc.lat, lng: loc.lng, locationId: loc.id, locationName: loc.name };
 }
@@ -76,7 +76,7 @@ async function startDuel(io, duel) {
 
   const payload = {
     mode: duel.location.mode,
-    imageId: duel.location.imageId || null,
+    panoId: duel.location.panoId || null,
     photoUrl: duel.location.mode === "photo" ? `/duel/${duel.code}/photo` : null,
     timeLimitSec: DUEL_TIME_LIMIT_SEC,
     bet: duel.bet,
@@ -149,7 +149,7 @@ function resolveDuel(io, duel) {
 }
 
 async function finishLocationLabel(duel) {
-  if (duel.location.mode === "mapillary") {
+  if (duel.location.mode === "streetview") {
     return (await reverseGeocode(duel.location.lat, duel.location.lng)) || "Unknown location";
   }
   return duel.location.locationName;

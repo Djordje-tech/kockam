@@ -116,12 +116,9 @@ function jitter(value, maxDeg) {
 
 export function randomSeedPoint() {
   const point = SEED_POINTS[Math.floor(Math.random() * SEED_POINTS.length)];
-  // Keep the jitter modest: Mapillary caps a search box at 0.01 square
-  // degrees, so straying far from a city centre mostly lands on empty
-  // coverage and wastes an attempt.
   return {
     ...point,
-    lat: jitter(point.lat, 0.05),
-    lng: jitter(point.lng, 0.05),
+    lat: jitter(point.lat, 0.12),
+    lng: jitter(point.lng, 0.12),
   };
 }
