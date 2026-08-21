@@ -14,7 +14,7 @@ import { randomLocation, LOCATIONS } from "./locations.js";
 import { haversineKm, scoreFromDistance, resolveBet } from "./scoring.js";
 import { getLocationPhoto } from "./photo.js";
 import { startLiveFeed } from "./liveFeed.js";
-import { MAPILLARY_ENABLED, findRandomMapillaryImage, reverseGeocode } from "./mapillary.js";
+import { MAPILLARY_ENABLED, findRandomMapillaryImage, reverseGeocode, diagnose } from "./mapillary.js";
 import { registerDuelHandlers, duels } from "./duels.js";
 
 const app = express();
@@ -111,6 +111,15 @@ app.post("/api/wallet/topup", authMiddleware, (req, res) => {
 });
 
 // ---------- Game ----------
+
+// Open http://localhost:4000/api/debug/mapillary in a browser to see, in
+// plain JSON, whether street-view lookups are working and how slow they are.
+app.get(
+  "/api/debug/mapillary",
+  ah(async (req, res) => {
+    res.json(await diagnose());
+  })
+);
 
 app.get("/api/config", (req, res) => {
   res.json({

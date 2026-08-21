@@ -128,6 +128,65 @@ export async function findRandomMapillaryImage() {
 // Warm the pool at boot so the first round doesn't have to wait.
 if (ACCESS_TOKEN) refillPool();
 
+// Runs one search with timing and reports exactly what happened, so a
+// misbehaving token / network / API can be diagnosed from the browser
+// instead of by reading server logs.
+export async function diagnose() {
+  if (!ACCESS_TOKEN) {
+    return { ok: false, reason: "MAPILLARY_ACCESS_TOKEN is not set in server/.env" };
+  }
+
+  const seed = randomSeedPoint();
+  const half = BBOX_DEGREES / 2;
+  const bbox = [seed.lng - half, seed.lat - half, seed.lng + half, seed.lat + half];
+  const url = new URL("https://graph.mapillary.com/images");
+  url.searchParams.set("access_token", ACCESS_TOKEN);
+  url.searchParams.set("fields", "id,computed_geometry");
+  url.searchParams.set("bbox", bbox.join(","));
+  url.searchParams.set("limit", String(RESULT_LIMIT));
+
+  const started = Date.now();
+  const base = {
+    searchedNear: `${seed.city}, ${seed.country}`,
+    bboxAreaSqDeg: Number(((bbox[2] - bbox[0]) * (bbox[3] - bbox[1])).toFixed(5)),
+    tokenPreview: `${ACCESS_TOKEN.slice(0, 4)}…${ACCESS_TOKEN.slice(-4)} (${ACCESS_TOKEN.length} chars)`,
+    poolReady: pool.length,
+    lookupsPaused: Date.now() < pausedUntil,
+  };
+
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(30000) });
+    const tookMs = Date.now() - started;
+    if (!res.ok) {
+      return {
+        ok: false,
+        reason: `Mapillary answered HTTP ${res.status}`,
+        body: (await res.text().catch(() => "")).slice(0, 500),
+        tookMs,
+        ...base,
+      };
+    }
+    const json = await res.json();
+    const found = (json.data || []).filter((i) => i.computed_geometry?.coordinates).length;
+    return {
+      ok: found > 0,
+      reason: found > 0 ? "Search worked" : "Request succeeded but this area has no coverage",
+      imagesFound: found,
+      tookMs,
+      note: tookMs > BACKGROUND_TIMEOUT_MS ? "Slower than the background timeout — that's the problem" : undefined,
+      ...base,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      reason: `Request failed: ${err.message}`,
+      tookMs: Date.now() - started,
+      hint: "A timeout here means graph.mapillary.com is unreachable or very slow from this machine (VPN/firewall?)",
+      ...base,
+    };
+  }
+}
+
 // Best-effort "City, Country" label for the reveal screen, via OpenStreetMap's
 // free Nominatim reverse-geocoding API (no key needed). Falls back to null
 // (client just shows coordinates) if the lookup fails.
