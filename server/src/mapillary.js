@@ -8,8 +8,11 @@ import { randomSeedPoint } from "./seedPoints.js";
 const ACCESS_TOKEN = process.env.MAPILLARY_ACCESS_TOKEN || "";
 export const MAPILLARY_ENABLED = Boolean(ACCESS_TOKEN);
 
-const MAX_ATTEMPTS = 6;
-const BBOX_DEGREES = 0.15; // roughly a 15-20km box around the seed point
+const MAX_ATTEMPTS = 10;
+// Mapillary rejects any search box larger than 0.010 square degrees, so the
+// side length has to stay under sqrt(0.010) ≈ 0.1. 0.09 gives 0.0081 sq deg
+// — a roughly 7-10km box around the seed point, with margin to spare.
+const BBOX_DEGREES = 0.09;
 
 // Resolves a random real Mapillary image near a random seed point. Returns
 // { id, lat, lng } for a real spot, or null if no coverage was found nearby
@@ -25,9 +28,9 @@ export async function findRandomMapillaryImage() {
     try {
       const url = new URL("https://graph.mapillary.com/images");
       url.searchParams.set("access_token", ACCESS_TOKEN);
-      url.searchParams.set("fields", "id,computed_geometry");
+      url.searchParams.set("fields", "id,computed_geometry,is_pano");
       url.searchParams.set("bbox", bbox);
-      url.searchParams.set("limit", "20");
+      url.searchParams.set("limit", "50");
 
       const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
       if (!res.ok) {
@@ -41,7 +44,11 @@ export async function findRandomMapillaryImage() {
         continue;
       }
 
-      const pick = candidates[Math.floor(Math.random() * candidates.length)];
+      // 360° panoramas give the real look-around-everywhere feel, so prefer
+      // them; fall back to flat dashcam-style shots when a spot has none.
+      const panos = candidates.filter((img) => img.is_pano);
+      const pool = panos.length > 0 ? panos : candidates;
+      const pick = pool[Math.floor(Math.random() * pool.length)];
       const [lng, lat] = pick.computed_geometry.coordinates;
       return { id: pick.id, lat, lng };
     } catch (err) {
