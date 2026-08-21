@@ -27,6 +27,11 @@ function publicUser(row) {
   return { id: row.id, username: row.username, balance: row.balance };
 }
 
+// Express 4 doesn't forward rejected promises from async handlers to the
+// error middleware on its own — wrap them so failures come back as JSON
+// instead of a bare, undiagnosable 500.
+const ah = (fn) => (req, res, next) => fn(req, res, next).catch(next);
+
 // ---------- Auth ----------
 
 app.post("/api/auth/register", (req, res) => {
@@ -110,7 +115,7 @@ app.get("/api/config", (req, res) => {
   });
 });
 
-app.post("/api/round/start", authMiddleware, async (req, res) => {
+app.post("/api/round/start", authMiddleware, ah(async (req, res) => {
   const { betAmount } = req.body || {};
   if (!BET_OPTIONS.includes(betAmount)) {
     return res.status(400).json({ error: "Invalid bet amount" });
@@ -152,9 +157,9 @@ app.post("/api/round/start", authMiddleware, async (req, res) => {
     panoId: mode === "streetview" ? pano.panoId : null,
     balance: newBalance,
   });
-});
+}));
 
-app.get("/api/round/:id/photo", authMiddleware, async (req, res) => {
+app.get("/api/round/:id/photo", authMiddleware, ah(async (req, res) => {
   const round = db
     .prepare("SELECT * FROM rounds WHERE id = ? AND user_id = ?")
     .get(req.params.id, req.userId);
@@ -164,7 +169,7 @@ app.get("/api/round/:id/photo", authMiddleware, async (req, res) => {
   res.set("Content-Type", contentType);
   res.set("Cache-Control", "private, max-age=3600");
   res.send(buffer);
-});
+}));
 
 async function resolveLocationLabel(round) {
   if (round.mode === "streetview") {
@@ -173,7 +178,7 @@ async function resolveLocationLabel(round) {
   return round.location_name;
 }
 
-app.post("/api/round/:id/guess", authMiddleware, async (req, res) => {
+app.post("/api/round/:id/guess", authMiddleware, ah(async (req, res) => {
   const { lat, lng } = req.body || {};
   if (typeof lat !== "number" || typeof lng !== "number") {
     return res.status(400).json({ error: "lat/lng required" });
@@ -227,9 +232,9 @@ app.post("/api/round/:id/guess", authMiddleware, async (req, res) => {
   });
 
   res.json(payload);
-});
+}));
 
-app.post("/api/round/:id/forfeit", authMiddleware, async (req, res) => {
+app.post("/api/round/:id/forfeit", authMiddleware, ah(async (req, res) => {
   const round = db
     .prepare("SELECT * FROM rounds WHERE id = ? AND user_id = ?")
     .get(req.params.id, req.userId);
@@ -255,13 +260,21 @@ app.post("/api/round/:id/forfeit", authMiddleware, async (req, res) => {
     balance: user.balance,
     timedOut: true,
   });
-});
+}));
 
 app.get("/api/leaderboard", (req, res) => {
   const rows = db
     .prepare("SELECT username, balance FROM users ORDER BY balance DESC LIMIT 10")
     .all();
   res.json({ leaderboard: rows });
+});
+
+// Safety net: turn any uncaught route error into a JSON response (with the
+// message in dev) instead of a bare 500 that the client can't show.
+app.use((err, req, res, next) => {
+  console.error(err);
+  if (res.headersSent) return next(err);
+  res.status(500).json({ error: err.message || "Internal server error" });
 });
 
 const PORT = process.env.PORT || 4000;
