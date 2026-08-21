@@ -1,3 +1,5 @@
+import { formatChips } from "../format";
+
 export default function BetSlip({
   betOptions,
   selectedBet,
@@ -29,13 +31,13 @@ export default function BetSlip({
                 disabled={dealing || amount > balance}
                 onClick={() => onSelectBet(amount)}
               >
-                🪙{amount}
+                🪙{formatChips(amount)}
               </button>
             ))}
           </div>
 
           <button className="btn btn-primary" style={{ width: "100%" }} onClick={onDeal} disabled={dealing || selectedBet > balance}>
-            {dealing ? "Dealing…" : `🎲 Deal — Bet ${selectedBet}`}
+            {dealing ? "Dealing…" : `🎲 Deal — Bet ${formatChips(selectedBet)}`}
           </button>
         </>
       ) : (

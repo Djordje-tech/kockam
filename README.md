@@ -44,6 +44,24 @@ the map — closer guesses pay out bigger multipliers, misses lose the bet.
    other "players" for a busy-casino-floor feel — purely visual, it never
    touches real balances. There's also a top-10 chip leaderboard.
 
+Bets range from 500 to 100,000 chips. Out of chips? "Add Chips" has six fake
+purchase bundles from 500 to 150,000 chips — again, no real payment happens.
+
+## 1v1 Duels
+
+The **Duel** tab is real-time head-to-head play over Socket.IO, not solo vs.
+the house:
+
+1. Create a duel and pick a bet — you get a 5-character room code to send a
+   friend (Discord, text, whatever).
+2. They open Duel → Join and enter the code. Both players ready up.
+3. Once both are ready, the bet is deducted from both and a single shared
+   location (Street View or landmark photo, same rules as solo) is dealt to
+   both players at once, same clock.
+4. Whoever guesses closer wins — the winner takes both bets (2x their stake),
+   a tie refunds each their own bet. Disconnecting mid-round without guessing
+   counts as a forfeit so your opponent isn't stuck waiting forever.
+
 ## Running locally
 
 ### Server

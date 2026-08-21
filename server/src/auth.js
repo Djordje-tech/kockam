@@ -18,3 +18,9 @@ export function authMiddleware(req, res, next) {
     return res.status(401).json({ error: "Invalid or expired token" });
   }
 }
+
+// For Socket.IO connections, which authenticate via a handshake payload
+// instead of an HTTP header.
+export function verifyToken(token) {
+  return jwt.verify(token, JWT_SECRET); // throws if invalid/expired
+}

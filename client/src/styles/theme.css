@@ -264,7 +264,7 @@ a { color: inherit; }
 
 .chip-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 10px;
   margin-bottom: 16px;
 }
@@ -275,7 +275,7 @@ a { color: inherit; }
   border-radius: 50%;
   aspect-ratio: 1;
   font-weight: 800;
-  font-size: 13px;
+  font-size: 12px;
   cursor: pointer;
   transition: transform 0.12s, border-color 0.12s;
 }

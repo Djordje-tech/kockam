@@ -3,9 +3,12 @@ import { motion, AnimatePresence } from "framer-motion";
 import { api } from "../api";
 
 const PACKAGES = [
+  { id: "mini", label: "Mini Top-Up", chips: 500, price: "$1.99" },
   { id: "starter", label: "Starter Stack", chips: 2000, price: "$4.99" },
-  { id: "high_roller", label: "High Roller Pack", chips: 10000, price: "$14.99", best: true },
+  { id: "popular", label: "Popular Pack", chips: 10000, price: "$14.99", best: true },
+  { id: "high_roller", label: "High Roller Pack", chips: 25000, price: "$29.99" },
   { id: "whale", label: "Whale Bundle", chips: 50000, price: "$49.99" },
+  { id: "mega_whale", label: "Mega Whale", chips: 150000, price: "$99.99" },
 ];
 
 export default function TopUpModal({ open, onClose, onCredited }) {

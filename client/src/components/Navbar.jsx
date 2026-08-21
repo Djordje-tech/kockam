@@ -12,6 +12,9 @@ export default function Navbar() {
           <NavLink to="/play" className={({ isActive }) => (isActive ? "active" : "")}>
             Play
           </NavLink>
+          <NavLink to="/duel" className={({ isActive }) => (isActive ? "active" : "")}>
+            ⚔️ Duel
+          </NavLink>
           <NavLink to="/leaderboard" className={({ isActive }) => (isActive ? "active" : "")}>
             Leaderboard
           </NavLink>

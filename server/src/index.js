@@ -12,6 +12,7 @@ import { haversineKm, scoreFromDistance, resolveBet } from "./scoring.js";
 import { getLocationPhoto } from "./photo.js";
 import { startLiveFeed } from "./liveFeed.js";
 import { STREET_VIEW_ENABLED, findRandomPanorama, reverseGeocode } from "./streetview.js";
+import { registerDuelHandlers, duels } from "./duels.js";
 
 const app = express();
 app.use(cors());
@@ -20,7 +21,7 @@ app.use(express.json());
 const STARTING_BALANCE = 5000;
 const DAILY_BONUS = 1000;
 const ROUND_TIME_LIMIT_SEC = 20;
-const BET_OPTIONS = [25, 100, 500, 1000, 2500];
+const BET_OPTIONS = [500, 1000, 2500, 5000, 10000, 25000, 50000, 100000];
 const GOOGLE_MAPS_BROWSER_KEY = process.env.GOOGLE_MAPS_BROWSER_KEY || "";
 
 function publicUser(row) {
@@ -87,9 +88,12 @@ app.post("/api/daily-claim", authMiddleware, (req, res) => {
 // ---------- Fake wallet top-up (no real payment processing anywhere) ----------
 
 const TOPUP_PACKAGES = {
+  mini: 500,
   starter: 2000,
-  high_roller: 10000,
+  popular: 10000,
+  high_roller: 25000,
   whale: 50000,
+  mega_whale: 150000,
 };
 
 app.post("/api/wallet/topup", authMiddleware, (req, res) => {
@@ -269,6 +273,23 @@ app.get("/api/leaderboard", (req, res) => {
   res.json({ leaderboard: rows });
 });
 
+app.get(
+  "/api/duel/:code/photo",
+  authMiddleware,
+  ah(async (req, res) => {
+    const duel = duels.get((req.params.code || "").toUpperCase());
+    const isParticipant =
+      duel && (duel.host?.userId === req.userId || duel.guest?.userId === req.userId);
+    if (!duel || !isParticipant || duel.location?.mode !== "photo") return res.status(404).end();
+
+    const location = LOCATIONS.find((l) => l.id === duel.location.locationId);
+    const { buffer, contentType } = await getLocationPhoto(location);
+    res.set("Content-Type", contentType);
+    res.set("Cache-Control", "private, max-age=3600");
+    res.send(buffer);
+  })
+);
+
 // Safety net: turn any uncaught route error into a JSON response (with the
 // message in dev) instead of a bare 500 that the client can't show.
 app.use((err, req, res, next) => {
@@ -285,6 +306,7 @@ io.on("connection", (socket) => {
   socket.emit("hello", { message: "connected to kockam live feed" });
 });
 
+registerDuelHandlers(io);
 startLiveFeed(io);
 
 server.listen(PORT, () => {
