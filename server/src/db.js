@@ -24,8 +24,10 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS rounds (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
-    location_id INTEGER NOT NULL,
-    location_name TEXT NOT NULL,
+    mode TEXT NOT NULL DEFAULT 'photo',
+    location_id INTEGER,
+    location_name TEXT,
+    pano_id TEXT,
     lat REAL NOT NULL,
     lng REAL NOT NULL,
     bet_amount INTEGER NOT NULL,
@@ -42,5 +44,10 @@ db.exec(`
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
 `);
+
+// Best-effort migration for databases created before mode/pano_id existed.
+const existingColumns = db.prepare("PRAGMA table_info(rounds)").all().map((c) => c.name);
+if (!existingColumns.includes("mode")) db.exec("ALTER TABLE rounds ADD COLUMN mode TEXT NOT NULL DEFAULT 'photo'");
+if (!existingColumns.includes("pano_id")) db.exec("ALTER TABLE rounds ADD COLUMN pano_id TEXT");
 
 export default db;

@@ -1,4 +1,5 @@
-import { MapContainer, TileLayer, Marker, Polyline, useMapEvents } from "react-leaflet";
+import { useEffect } from "react";
+import { MapContainer, TileLayer, Marker, Polyline, useMap, useMapEvents } from "react-leaflet";
 import L from "leaflet";
 
 const guessIcon = new L.DivIcon({
@@ -25,6 +26,17 @@ function ClickCatcher({ onPick, disabled }) {
   return null;
 }
 
+function FitOnReveal({ pin, reveal }) {
+  const map = useMap();
+  useEffect(() => {
+    if (!reveal) return;
+    const points = [[reveal.actualLat, reveal.actualLng]];
+    if (pin) points.push(pin);
+    map.fitBounds(points, { padding: [40, 40], maxZoom: 8 });
+  }, [reveal, pin, map]);
+  return null;
+}
+
 export default function GuessMap({ pin, onPick, disabled, reveal }) {
   return (
     <div className="map-frame">
@@ -34,6 +46,7 @@ export default function GuessMap({ pin, onPick, disabled, reveal }) {
           attribution='&copy; OpenStreetMap contributors'
         />
         <ClickCatcher onPick={onPick} disabled={disabled} />
+        <FitOnReveal pin={pin} reveal={reveal} />
         {pin && <Marker position={pin} icon={guessIcon} />}
         {reveal && (
           <>

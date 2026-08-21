@@ -11,6 +11,7 @@ import { randomLocation, LOCATIONS } from "./locations.js";
 import { haversineKm, scoreFromDistance, resolveBet } from "./scoring.js";
 import { getLocationPhoto } from "./photo.js";
 import { startLiveFeed } from "./liveFeed.js";
+import { STREET_VIEW_ENABLED, findRandomPanorama, reverseGeocode } from "./streetview.js";
 
 const app = express();
 app.use(cors());
@@ -18,8 +19,9 @@ app.use(express.json());
 
 const STARTING_BALANCE = 5000;
 const DAILY_BONUS = 1000;
-const ROUND_TIME_LIMIT_SEC = 60;
+const ROUND_TIME_LIMIT_SEC = 20;
 const BET_OPTIONS = [25, 100, 500, 1000, 2500];
+const GOOGLE_MAPS_BROWSER_KEY = process.env.GOOGLE_MAPS_BROWSER_KEY || "";
 
 function publicUser(row) {
   return { id: row.id, username: row.username, balance: row.balance };
@@ -77,13 +79,38 @@ app.post("/api/daily-claim", authMiddleware, (req, res) => {
   res.json({ balance: newBalance, bonus: DAILY_BONUS });
 });
 
+// ---------- Fake wallet top-up (no real payment processing anywhere) ----------
+
+const TOPUP_PACKAGES = {
+  starter: 2000,
+  high_roller: 10000,
+  whale: 50000,
+};
+
+app.post("/api/wallet/topup", authMiddleware, (req, res) => {
+  const { pkg } = req.body || {};
+  const amount = TOPUP_PACKAGES[pkg];
+  if (!amount) return res.status(400).json({ error: "Unknown package" });
+
+  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.userId);
+  const newBalance = user.balance + amount;
+  db.prepare("UPDATE users SET balance = ? WHERE id = ?").run(newBalance, user.id);
+  res.json({ balance: newBalance, credited: amount });
+});
+
 // ---------- Game ----------
 
 app.get("/api/config", (req, res) => {
-  res.json({ betOptions: BET_OPTIONS, timeLimitSec: ROUND_TIME_LIMIT_SEC, startingBalance: STARTING_BALANCE });
+  res.json({
+    betOptions: BET_OPTIONS,
+    timeLimitSec: ROUND_TIME_LIMIT_SEC,
+    startingBalance: STARTING_BALANCE,
+    streetViewEnabled: STREET_VIEW_ENABLED,
+    googleMapsBrowserKey: STREET_VIEW_ENABLED ? GOOGLE_MAPS_BROWSER_KEY : "",
+  });
 });
 
-app.post("/api/round/start", authMiddleware, (req, res) => {
+app.post("/api/round/start", authMiddleware, async (req, res) => {
   const { betAmount } = req.body || {};
   if (!BET_OPTIONS.includes(betAmount)) {
     return res.status(400).json({ error: "Invalid bet amount" });
@@ -91,22 +118,38 @@ app.post("/api/round/start", authMiddleware, (req, res) => {
   const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.userId);
   if (user.balance < betAmount) return res.status(400).json({ error: "Insufficient balance" });
 
-  const location = randomLocation();
+  // Prefer a real, walkable Street View panorama; fall back to the curated
+  // landmark-photo mode if no API key is configured or none was found.
+  const pano = STREET_VIEW_ENABLED ? await findRandomPanorama() : null;
+  const mode = pano ? "streetview" : "photo";
+  const location = pano ? null : randomLocation();
+
   const newBalance = user.balance - betAmount;
   db.prepare("UPDATE users SET balance = ? WHERE id = ?").run(newBalance, user.id);
 
   const info = db
     .prepare(
-      `INSERT INTO rounds (user_id, location_id, location_name, lat, lng, bet_amount, status)
-       VALUES (?, ?, ?, ?, ?, ?, 'pending')`
+      `INSERT INTO rounds (user_id, mode, location_id, location_name, pano_id, lat, lng, bet_amount, status)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')`
     )
-    .run(user.id, location.id, location.name, location.lat, location.lng, betAmount);
+    .run(
+      user.id,
+      mode,
+      pano ? null : location.id,
+      pano ? null : location.name,
+      pano ? pano.panoId : null,
+      pano ? pano.lat : location.lat,
+      pano ? pano.lng : location.lng,
+      betAmount
+    );
 
   res.json({
     roundId: info.lastInsertRowid,
+    mode,
     betAmount,
     timeLimitSec: ROUND_TIME_LIMIT_SEC,
-    photoUrl: `/round/${info.lastInsertRowid}/photo`,
+    photoUrl: mode === "photo" ? `/round/${info.lastInsertRowid}/photo` : null,
+    panoId: mode === "streetview" ? pano.panoId : null,
     balance: newBalance,
   });
 });
@@ -115,7 +158,7 @@ app.get("/api/round/:id/photo", authMiddleware, async (req, res) => {
   const round = db
     .prepare("SELECT * FROM rounds WHERE id = ? AND user_id = ?")
     .get(req.params.id, req.userId);
-  if (!round) return res.status(404).end();
+  if (!round || round.mode !== "photo") return res.status(404).end();
   const location = LOCATIONS.find((l) => l.id === round.location_id);
   const { buffer, contentType } = await getLocationPhoto(location);
   res.set("Content-Type", contentType);
@@ -123,7 +166,14 @@ app.get("/api/round/:id/photo", authMiddleware, async (req, res) => {
   res.send(buffer);
 });
 
-app.post("/api/round/:id/guess", authMiddleware, (req, res) => {
+async function resolveLocationLabel(round) {
+  if (round.mode === "streetview") {
+    return (await reverseGeocode(round.lat, round.lng)) || "Unknown location";
+  }
+  return round.location_name;
+}
+
+app.post("/api/round/:id/guess", authMiddleware, async (req, res) => {
   const { lat, lng } = req.body || {};
   if (typeof lat !== "number" || typeof lng !== "number") {
     return res.status(400).json({ error: "lat/lng required" });
@@ -137,19 +187,20 @@ app.post("/api/round/:id/guess", authMiddleware, (req, res) => {
   const distanceKm = haversineKm(round.lat, round.lng, lat, lng);
   const score = scoreFromDistance(distanceKm);
   const { multiplier, result, payout } = resolveBet(distanceKm, round.bet_amount);
+  const locationName = await resolveLocationLabel(round);
 
   const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.userId);
   const newBalance = user.balance + payout;
 
   db.prepare(
     `UPDATE rounds SET guess_lat = ?, guess_lng = ?, distance_km = ?, score = ?, multiplier = ?,
-     payout = ?, result = ?, status = 'resolved', resolved_at = datetime('now') WHERE id = ?`
-  ).run(lat, lng, distanceKm, score, multiplier, payout, result, round.id);
+     payout = ?, result = ?, location_name = ?, status = 'resolved', resolved_at = datetime('now') WHERE id = ?`
+  ).run(lat, lng, distanceKm, score, multiplier, payout, result, locationName, round.id);
   db.prepare("UPDATE users SET balance = ? WHERE id = ?").run(newBalance, user.id);
 
   const payload = {
     roundId: round.id,
-    locationName: round.location_name,
+    locationName,
     actualLat: round.lat,
     actualLng: round.lng,
     guessLat: lat,
@@ -167,8 +218,7 @@ app.post("/api/round/:id/guess", authMiddleware, (req, res) => {
     id: `user-${round.id}`,
     username: user.username,
     bot: false,
-    locationName: round.location_name,
-    country: LOCATIONS.find((l) => l.id === round.location_id)?.country,
+    locationName,
     betAmount: round.bet_amount,
     payout,
     result,
@@ -179,22 +229,24 @@ app.post("/api/round/:id/guess", authMiddleware, (req, res) => {
   res.json(payload);
 });
 
-app.post("/api/round/:id/forfeit", authMiddleware, (req, res) => {
+app.post("/api/round/:id/forfeit", authMiddleware, async (req, res) => {
   const round = db
     .prepare("SELECT * FROM rounds WHERE id = ? AND user_id = ?")
     .get(req.params.id, req.userId);
   if (!round) return res.status(404).json({ error: "Round not found" });
   if (round.status !== "pending") return res.status(400).json({ error: "Round already resolved" });
 
+  const locationName = await resolveLocationLabel(round);
+
   db.prepare(
-    `UPDATE rounds SET score = 0, multiplier = 0, payout = 0, result = 'BUST',
+    `UPDATE rounds SET score = 0, multiplier = 0, payout = 0, result = 'BUST', location_name = ?,
      status = 'resolved', resolved_at = datetime('now') WHERE id = ?`
-  ).run(round.id);
+  ).run(locationName, round.id);
 
   const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.userId);
   res.json({
     roundId: round.id,
-    locationName: round.location_name,
+    locationName,
     actualLat: round.lat,
     actualLng: round.lng,
     betAmount: round.bet_amount,

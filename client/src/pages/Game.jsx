@@ -5,25 +5,28 @@ import BetSlip from "../components/BetSlip";
 import GuessMap from "../components/GuessMap";
 import RevealModal from "../components/RevealModal";
 import LiveFeed from "../components/LiveFeed";
+import StreetViewPanel from "../components/StreetViewPanel";
+import TopUpModal from "../components/TopUpModal";
 
 export default function Game() {
   const { user, updateBalance } = useAuth();
-  const [betOptions, setBetOptions] = useState([25, 100, 500, 1000, 2500]);
+  const [config, setConfig] = useState({ betOptions: [25, 100, 500, 1000, 2500], timeLimitSec: 20 });
   const [selectedBet, setSelectedBet] = useState(100);
-  const [round, setRound] = useState(null); // { roundId, photoUrl, timeLimitSec }
+  const [round, setRound] = useState(null); // { roundId, betAmount, mode, panoId }
   const [pin, setPin] = useState(null);
   const [timeLeft, setTimeLeft] = useState(0);
   const [reveal, setReveal] = useState(null);
   const [dealing, setDealing] = useState(false);
   const [claim, setClaim] = useState(null);
   const [photoSrc, setPhotoSrc] = useState(null);
+  const [topUpOpen, setTopUpOpen] = useState(false);
   const timerRef = useRef(null);
   const roundRef = useRef(null);
   const photoUrlRef = useRef(null);
 
   useEffect(() => {
     api.get("/config").then((res) => {
-      setBetOptions(res.data.betOptions);
+      setConfig(res.data);
       setSelectedBet(res.data.betOptions[Math.min(1, res.data.betOptions.length - 1)]);
     });
   }, []);
@@ -54,7 +57,12 @@ export default function Game() {
     try {
       const res = await api.post("/round/start", { betAmount: selectedBet });
       updateBalance(res.data.balance);
-      const newRound = { roundId: res.data.roundId, photoUrl: res.data.photoUrl, betAmount: selectedBet };
+      const newRound = {
+        roundId: res.data.roundId,
+        betAmount: selectedBet,
+        mode: res.data.mode,
+        panoId: res.data.panoId,
+      };
       roundRef.current = newRound;
       setRound(newRound);
       setPin(null);
@@ -63,10 +71,12 @@ export default function Game() {
 
       if (photoUrlRef.current) URL.revokeObjectURL(photoUrlRef.current);
       setPhotoSrc(null);
-      const photoRes = await api.get(res.data.photoUrl, { responseType: "blob" });
-      const objectUrl = URL.createObjectURL(photoRes.data);
-      photoUrlRef.current = objectUrl;
-      setPhotoSrc(objectUrl);
+      if (res.data.mode === "photo") {
+        const photoRes = await api.get(res.data.photoUrl, { responseType: "blob" });
+        const objectUrl = URL.createObjectURL(photoRes.data);
+        photoUrlRef.current = objectUrl;
+        setPhotoSrc(objectUrl);
+      }
 
       clearInterval(timerRef.current);
       timerRef.current = setInterval(() => {
@@ -121,6 +131,7 @@ export default function Game() {
   }
 
   const inRound = !!round && !reveal;
+  const urgentTime = inRound && timeLeft <= 5;
 
   return (
     <div className="page">
@@ -146,27 +157,34 @@ export default function Game() {
           )}
 
           <div className="photo-frame">
-            {round && photoSrc ? (
-              <img src={photoSrc} alt="Guess the location" />
-            ) : round ? (
+            {round && round.mode === "streetview" && (
+              <StreetViewPanel panoId={round.panoId} apiKey={config.googleMapsBrowserKey} />
+            )}
+            {round && round.mode === "photo" && photoSrc && <img src={photoSrc} alt="Guess the location" />}
+            {round && round.mode === "photo" && !photoSrc && (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--text-dim)" }}>
                 Loading location…
               </div>
-            ) : (
+            )}
+            {!round && (
               <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "var(--text-dim)" }}>
                 Place a bet and hit Deal to reveal a location
               </div>
             )}
-            {inRound && <div className="timer-badge">⏱ {timeLeft}s</div>}
+            {inRound && (
+              <div className="timer-badge" style={urgentTime ? { borderColor: "var(--red)", color: "var(--red)" } : undefined}>
+                ⏱ {timeLeft}s
+              </div>
+            )}
             {inRound && <div className="bet-badge">🪙 Bet: {round.betAmount}</div>}
           </div>
 
-          <GuessMap pin={pin} onPick={setPin} disabled={!inRound} reveal={null} />
+          <GuessMap pin={pin} onPick={setPin} disabled={!inRound} reveal={reveal} />
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
           <BetSlip
-            betOptions={betOptions}
+            betOptions={config.betOptions}
             selectedBet={selectedBet}
             onSelectBet={setSelectedBet}
             balance={user?.balance ?? 0}
@@ -175,12 +193,18 @@ export default function Game() {
             canSubmitGuess={inRound}
             onSubmitGuess={onSubmitGuess}
             hasPin={!!pin}
+            onAddChips={() => setTopUpOpen(true)}
           />
           <LiveFeed />
         </div>
       </div>
 
       <RevealModal reveal={reveal} onClose={closeReveal} />
+      <TopUpModal
+        open={topUpOpen}
+        onClose={() => setTopUpOpen(false)}
+        onCredited={(balance) => updateBalance(balance)}
+      />
     </div>
   );
 }
