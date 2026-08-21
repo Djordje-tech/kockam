@@ -8,7 +8,13 @@ import { randomSeedPoint } from "./seedPoints.js";
 const ACCESS_TOKEN = process.env.MAPILLARY_ACCESS_TOKEN || "";
 export const MAPILLARY_ENABLED = Boolean(ACCESS_TOKEN);
 
-const MAX_ATTEMPTS = 10;
+const MAX_ATTEMPTS = 8;
+const REQUEST_TIMEOUT_MS = 3000;
+// A player is staring at a "Dealing…" button while this runs, so cap the
+// whole search — better to fall back to a landmark photo quickly than to
+// keep retrying for the better part of a minute. Worst case is roughly
+// this deadline plus one request timeout.
+const TOTAL_DEADLINE_MS = 5000;
 // Mapillary rejects any search box larger than 0.010 square degrees, so the
 // side length has to stay under sqrt(0.010) ≈ 0.1. 0.09 gives 0.0081 sq deg
 // — a roughly 7-10km box around the seed point, with margin to spare.
@@ -16,11 +22,16 @@ const BBOX_DEGREES = 0.09;
 
 // Resolves a random real Mapillary image near a random seed point. Returns
 // { id, lat, lng } for a real spot, or null if no coverage was found nearby
-// after a few tries (caller falls back to the curated-landmark photo mode).
+// (caller falls back to the curated-landmark photo mode).
 export async function findRandomMapillaryImage() {
   if (!ACCESS_TOKEN) return null;
+  const deadline = Date.now() + TOTAL_DEADLINE_MS;
 
   for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+    if (Date.now() >= deadline) {
+      console.log("[mapillary] search deadline hit, falling back to photo mode");
+      break;
+    }
     const seed = randomSeedPoint();
     const half = BBOX_DEGREES / 2;
     const bbox = [seed.lng - half, seed.lat - half, seed.lng + half, seed.lat + half].join(",");
@@ -28,11 +39,11 @@ export async function findRandomMapillaryImage() {
     try {
       const url = new URL("https://graph.mapillary.com/images");
       url.searchParams.set("access_token", ACCESS_TOKEN);
-      url.searchParams.set("fields", "id,computed_geometry,is_pano");
+      url.searchParams.set("fields", "id,computed_geometry");
       url.searchParams.set("bbox", bbox);
       url.searchParams.set("limit", "50");
 
-      const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
+      const res = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
       if (!res.ok) {
         console.error(`[mapillary] ${res.status} near ${seed.city}:`, await res.text().catch(() => ""));
         continue;
@@ -44,12 +55,9 @@ export async function findRandomMapillaryImage() {
         continue;
       }
 
-      // 360° panoramas give the real look-around-everywhere feel, so prefer
-      // them; fall back to flat dashcam-style shots when a spot has none.
-      const panos = candidates.filter((img) => img.is_pano);
-      const pool = panos.length > 0 ? panos : candidates;
-      const pick = pool[Math.floor(Math.random() * pool.length)];
+      const pick = candidates[Math.floor(Math.random() * candidates.length)];
       const [lng, lat] = pick.computed_geometry.coordinates;
+      console.log(`[mapillary] found image ${pick.id} near ${seed.city}`);
       return { id: pick.id, lat, lng };
     } catch (err) {
       console.error(`[mapillary] request failed near ${seed.city}:`, err.message);
