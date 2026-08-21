@@ -30,16 +30,22 @@ export async function findRandomMapillaryImage() {
       url.searchParams.set("limit", "20");
 
       const res = await fetch(url, { signal: AbortSignal.timeout(6000) });
-      if (!res.ok) continue;
+      if (!res.ok) {
+        console.error(`[mapillary] ${res.status} near ${seed.city}:`, await res.text().catch(() => ""));
+        continue;
+      }
       const json = await res.json();
       const candidates = (json.data || []).filter((img) => img.computed_geometry?.coordinates);
-      if (candidates.length === 0) continue;
+      if (candidates.length === 0) {
+        console.log(`[mapillary] no images found near ${seed.city}`);
+        continue;
+      }
 
       const pick = candidates[Math.floor(Math.random() * candidates.length)];
       const [lng, lat] = pick.computed_geometry.coordinates;
       return { id: pick.id, lat, lng };
-    } catch {
-      // try the next seed point
+    } catch (err) {
+      console.error(`[mapillary] request failed near ${seed.city}:`, err.message);
     }
   }
   return null;
