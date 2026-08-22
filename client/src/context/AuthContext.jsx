@@ -50,8 +50,25 @@ export function AuthProvider({ children }) {
     setUser((u) => (u ? { ...u, balance } : u));
   }, []);
 
+  // A resolved round hands back the balance and the streak together — apply
+  // them in one go so the navbar never shows one without the other.
+  const applyRound = useCallback((result) => {
+    setUser((u) =>
+      u
+        ? {
+            ...u,
+            balance: result.balance ?? u.balance,
+            streak: result.streak ?? u.streak,
+            bestStreak: result.bestStreak ?? u.bestStreak,
+          }
+        : u
+    );
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ token, user, loading, login, register, logout, updateBalance }}>
+    <AuthContext.Provider
+      value={{ token, user, loading, login, register, logout, updateBalance, applyRound }}
+    >
       {children}
     </AuthContext.Provider>
   );

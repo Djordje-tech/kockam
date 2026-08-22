@@ -1,4 +1,6 @@
 import { formatChips } from "../format";
+import { streakMultiplier } from "./StreakBadge";
+import { sfx } from "../sound";
 
 export default function BetSlip({
   betOptions,
@@ -11,7 +13,9 @@ export default function BetSlip({
   onSubmitGuess,
   hasPin,
   onAddChips,
+  streak = 0,
 }) {
+  const bonus = streakMultiplier(streak);
   return (
     <div className="bet-slip">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -29,7 +33,10 @@ export default function BetSlip({
                 key={amount}
                 className={`chip-btn ${selectedBet === amount ? "selected" : ""}`}
                 disabled={dealing || amount > balance}
-                onClick={() => onSelectBet(amount)}
+                onClick={() => {
+                  sfx.chip();
+                  onSelectBet(amount);
+                }}
               >
                 🪙{formatChips(amount)}
               </button>
@@ -81,6 +88,14 @@ export default function BetSlip({
           <span style={{ textAlign: "right", color: "var(--neon-cyan)", fontWeight: 700 }}>0.5x PUSH</span>
           <span>🔴 Further / no guess</span>
           <span style={{ textAlign: "right", color: "var(--red)", fontWeight: 700 }}>BUST</span>
+          {bonus > 1 && (
+            <>
+              <span>🔥 Streak of {streak}</span>
+              <span style={{ textAlign: "right", color: "var(--gold-bright)", fontWeight: 700 }}>
+                × {bonus} on every win
+              </span>
+            </>
+          )}
         </div>
       </div>
     </div>

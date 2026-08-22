@@ -7,9 +7,11 @@ import RevealModal from "../components/RevealModal";
 import LiveFeed from "../components/LiveFeed";
 import StreetViewPanel from "../components/StreetViewPanel";
 import TopUpModal from "../components/TopUpModal";
+import { streakMultiplier, nextStreakMultiplier } from "../components/StreakBadge";
+import { sfx } from "../sound";
 
 export default function Game() {
-  const { user, updateBalance } = useAuth();
+  const { user, updateBalance, applyRound } = useAuth();
   const [config, setConfig] = useState({ betOptions: [500, 1000, 2500, 5000], timeLimitSec: 20 });
   const [selectedBet, setSelectedBet] = useState(1000);
   const [round, setRound] = useState(null); // { roundId, betAmount, mode, panoId }
@@ -45,7 +47,7 @@ export default function Game() {
     clearInterval(timerRef.current);
     try {
       const res = await api.post(`/round/${r.roundId}/forfeit`);
-      updateBalance(res.data.balance);
+      applyRound(res.data);
       setReveal(res.data);
     } catch {
       // round may already be resolved by a guess submitted right at the buzzer
@@ -54,6 +56,7 @@ export default function Game() {
 
   async function onDeal() {
     setDealing(true);
+    sfx.deal();
     try {
       const res = await api.post("/round/start", { betAmount: selectedBet });
       updateBalance(res.data.balance);
@@ -86,6 +89,9 @@ export default function Game() {
             forfeit();
             return 0;
           }
+          // The clock only becomes audible in the last five seconds, where it
+          // is meant to be felt.
+          if (t <= 6) sfx.tick(t <= 4);
           return t - 1;
         });
       }, 1000);
@@ -101,7 +107,7 @@ export default function Game() {
     clearInterval(timerRef.current);
     try {
       const res = await api.post(`/round/${round.roundId}/guess`, { lat: pin[0], lng: pin[1] });
-      updateBalance(res.data.balance);
+      applyRound(res.data);
       setReveal(res.data);
     } catch (err) {
       alert(err.response?.data?.error || "Could not submit guess");
@@ -132,6 +138,11 @@ export default function Game() {
 
   const inRound = !!round && !reveal;
   const urgentTime = inRound && timeLeft <= 5;
+  const streak = user?.streak ?? 0;
+  // What this round is actually playing for: the multiplier a win would pay
+  // at, and the run a bust would end.
+  const winMultiplier = nextStreakMultiplier(streak);
+  const potentialJackpot = Math.round(selectedBet * 5 * winMultiplier);
 
   return (
     <div className="page">
@@ -153,6 +164,21 @@ export default function Game() {
           {claim && !claim.ok && (
             <div className="claim-banner">
               <span>⏳ Already claimed — next bonus in ~{claim.hours}h</span>
+            </div>
+          )}
+
+          {streak >= 1 && (
+            <div className={`streak-strip${inRound ? " live" : ""}`}>
+              <span className="streak-strip-flame">🔥</span>
+              <span>
+                <strong>{streak} in a row</strong>
+                {streakMultiplier(streak) > 1
+                  ? ` — payouts running at ${streakMultiplier(streak)}x`
+                  : " — one more win starts the multiplier"}
+              </span>
+              <span className="streak-strip-stake">
+                Win this one: up to 🪙{potentialJackpot.toLocaleString()} · Bust: streak gone
+              </span>
             </div>
           )}
 
@@ -179,7 +205,15 @@ export default function Game() {
             {inRound && <div className="bet-badge">🪙 Bet: {round.betAmount}</div>}
           </div>
 
-          <GuessMap pin={pin} onPick={setPin} disabled={!inRound} reveal={reveal} />
+          <GuessMap
+            pin={pin}
+            onPick={(p) => {
+              sfx.pin();
+              setPin(p);
+            }}
+            disabled={!inRound}
+            reveal={reveal}
+          />
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
@@ -194,6 +228,7 @@ export default function Game() {
             onSubmitGuess={onSubmitGuess}
             hasPin={!!pin}
             onAddChips={() => setTopUpOpen(true)}
+            streak={streak}
           />
           <LiveFeed />
         </div>

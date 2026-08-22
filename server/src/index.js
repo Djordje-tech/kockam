@@ -11,7 +11,7 @@ import bcrypt from "bcryptjs";
 import { db } from "./db.js";
 import { signToken, authMiddleware } from "./auth.js";
 import { randomLocation, LOCATIONS } from "./locations.js";
-import { haversineKm, scoreFromDistance, resolveBet } from "./scoring.js";
+import { haversineKm, scoreFromDistance, resolveBet, nextStreak, nearMiss } from "./scoring.js";
 import { getLocationPhoto } from "./photo.js";
 import { startLiveFeed } from "./liveFeed.js";
 import { STREET_VIEW_ENABLED, findRandomPanorama, reverseGeocode, diagnose } from "./streetview.js";
@@ -28,7 +28,13 @@ const BET_OPTIONS = [500, 1000, 2500, 5000, 10000, 25000, 50000, 100000];
 const GOOGLE_MAPS_BROWSER_KEY = process.env.GOOGLE_MAPS_BROWSER_KEY || "";
 
 function publicUser(row) {
-  return { id: row.id, username: row.username, balance: row.balance };
+  return {
+    id: row.id,
+    username: row.username,
+    balance: row.balance,
+    streak: row.streak ?? 0,
+    bestStreak: row.best_streak ?? 0,
+  };
 }
 
 // Express 4 doesn't forward rejected promises from async handlers to the
@@ -206,19 +212,32 @@ app.post("/api/round/:id/guess", authMiddleware, ah(async (req, res) => {
   if (!round) return res.status(404).json({ error: "Round not found" });
   if (round.status !== "pending") return res.status(400).json({ error: "Round already resolved" });
 
+  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.userId);
+  const streakBefore = user.streak;
+
   const distanceKm = haversineKm(round.lat, round.lng, lat, lng);
   const score = scoreFromDistance(distanceKm);
-  const { multiplier, result, payout } = resolveBet(distanceKm, round.bet_amount);
+  const { multiplier, streakBonus, result, payout } = resolveBet(
+    distanceKm,
+    round.bet_amount,
+    streakBefore
+  );
   const locationName = await resolveLocationLabel(round);
 
-  const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.userId);
+  const streakAfter = nextStreak(streakBefore, result);
+  const bestStreak = Math.max(user.best_streak, streakAfter);
   const newBalance = user.balance + payout;
 
   db.prepare(
     `UPDATE rounds SET guess_lat = ?, guess_lng = ?, distance_km = ?, score = ?, multiplier = ?,
      payout = ?, result = ?, location_name = ?, status = 'resolved', resolved_at = datetime('now') WHERE id = ?`
   ).run(lat, lng, distanceKm, score, multiplier, payout, result, locationName, round.id);
-  db.prepare("UPDATE users SET balance = ? WHERE id = ?").run(newBalance, user.id);
+  db.prepare("UPDATE users SET balance = ?, streak = ?, best_streak = ? WHERE id = ?").run(
+    newBalance,
+    streakAfter,
+    bestStreak,
+    user.id
+  );
 
   const payload = {
     roundId: round.id,
@@ -231,9 +250,16 @@ app.post("/api/round/:id/guess", authMiddleware, ah(async (req, res) => {
     score,
     betAmount: round.bet_amount,
     multiplier,
+    streakBonus,
     payout,
     result,
     balance: newBalance,
+    streak: streakAfter,
+    streakBefore,
+    bestStreak,
+    // Only set when the guess landed just short of a better payout — the
+    // "so close" sting is the whole point of showing it.
+    nearMiss: nearMiss(distanceKm),
   };
 
   io.emit("live-feed", {
@@ -266,12 +292,19 @@ app.post("/api/round/:id/forfeit", authMiddleware, ah(async (req, res) => {
   ).run(locationName, round.id);
 
   const user = db.prepare("SELECT * FROM users WHERE id = ?").get(req.userId);
+  // Letting the clock run out is a bust like any other — the streak goes.
+  const streakBefore = user.streak;
+  db.prepare("UPDATE users SET streak = 0 WHERE id = ?").run(user.id);
+
   res.json({
     roundId: round.id,
     locationName,
     actualLat: round.lat,
     actualLng: round.lng,
     betAmount: round.bet_amount,
+    streak: 0,
+    streakBefore,
+    bestStreak: user.best_streak,
     payout: 0,
     result: "BUST",
     balance: user.balance,

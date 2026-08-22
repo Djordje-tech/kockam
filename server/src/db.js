@@ -18,6 +18,8 @@ db.exec(`
     password_hash TEXT NOT NULL,
     balance INTEGER NOT NULL DEFAULT 5000,
     last_daily_claim TEXT,
+    streak INTEGER NOT NULL DEFAULT 0,
+    best_streak INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -44,6 +46,16 @@ db.exec(`
     FOREIGN KEY (user_id) REFERENCES users(id)
   );
 `);
+
+// Streak tracking landed after the first accounts existed — add the columns
+// to any database that predates it.
+const userColumns = db.prepare("PRAGMA table_info(users)").all().map((c) => c.name);
+if (!userColumns.includes("streak")) {
+  db.exec("ALTER TABLE users ADD COLUMN streak INTEGER NOT NULL DEFAULT 0");
+}
+if (!userColumns.includes("best_streak")) {
+  db.exec("ALTER TABLE users ADD COLUMN best_streak INTEGER NOT NULL DEFAULT 0");
+}
 
 // Migration for databases created before Street View mode existed: those
 // have location_id/location_name as NOT NULL, which breaks inserting a

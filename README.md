@@ -38,9 +38,26 @@ the map — closer guesses pay out bigger multipliers, misses lose the bet.
    | < 3000 km      | PUSH      | 0.5x               |
    | further / timeout | BUST   | 0x (bet lost)      |
 
-6. The reveal screen shows the real location's name, the distance, and a map
-   with your pin, the actual spot, and a line between them.
-7. A live feed shows real player results plus cosmetic simulated activity from
+6. Wins stack into a **streak**, and the streak multiplies every payout on
+   top of the distance tier. A push holds the streak; a bust — or letting the
+   clock run out — wipes it back to zero.
+
+   | Wins in a row | Payout bonus |
+   |----------------|---------------|
+   | 2              | 1.2x          |
+   | 3              | 1.5x          |
+   | 4              | 2x            |
+   | 5              | 2.5x          |
+   | 6+             | 3x            |
+
+   So a JACKPOT on a 6-win run pays 5x x 3x = 15x the bet. The running streak
+   is shown in the navbar and above the panorama, along with what a win would
+   pay and what a bust would cost.
+7. The reveal screen shows the real location's name, the distance, and a map
+   with your pin, the actual spot, and a line between them. If the guess
+   landed just short of a better tier, it says by how much. Jackpots get
+   confetti; every result has its own sound (mutable from the navbar).
+8. A live feed shows real player results plus cosmetic simulated activity from
    other "players" for a busy-casino-floor feel — purely visual, it never
    touches real balances. There's also a top-10 chip leaderboard.
 

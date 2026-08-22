@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import { sfx } from "../sound";
+import Confetti from "../components/Confetti";
 import { useAuth } from "../context/AuthContext";
 import { useSocket } from "../context/SocketContext";
 import { formatChips } from "../format";
@@ -47,6 +49,7 @@ export default function Multiplayer() {
     };
 
     const onStart = async (payload) => {
+      sfx.deal();
       setResult(null);
       setRound(payload);
       setPin(null);
@@ -67,12 +70,21 @@ export default function Multiplayer() {
 
       clearInterval(timerRef.current);
       timerRef.current = setInterval(() => {
-        setTimeLeft((t) => (t <= 1 ? (clearInterval(timerRef.current), 0) : t - 1));
+        setTimeLeft((t) => {
+          if (t <= 1) {
+            clearInterval(timerRef.current);
+            return 0;
+          }
+          if (t <= 6) sfx.tick(t <= 4);
+          return t - 1;
+        });
       }, 1000);
     };
 
     const onResult = (payload) => {
       clearInterval(timerRef.current);
+      if (payload.you.isWinner) sfx.jackpot();
+      else sfx.bust();
       setResult(payload);
       updateBalance(payload.you.balance);
     };
@@ -165,7 +177,10 @@ export default function Multiplayer() {
                     key={amount}
                     className={`chip-btn ${selectedBet === amount ? "selected" : ""}`}
                     disabled={amount > (user?.balance ?? 0)}
-                    onClick={() => setSelectedBet(amount)}
+                    onClick={() => {
+                      sfx.chip();
+                      setSelectedBet(amount);
+                    }}
                   >
                     🪙{formatChips(amount)}
                   </button>
@@ -317,6 +332,7 @@ export default function Multiplayer() {
         {/* ---------- Results ---------- */}
         {result && (
           <div className="panel-card">
+            <Confetti active={result.you.isWinner} />
             <div
               className={`reveal-result ${result.you.isWinner ? "JACKPOT" : "BUST"}`}
               style={{ textAlign: "center" }}
