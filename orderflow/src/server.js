@@ -25,10 +25,11 @@ let feed;
 if (config.feed === 'binance') {
   feed = new BinanceFeed({ symbol: config.symbol });
   feed.on('status', (s) => console.log('[feed]', s.state, s.why ?? s.url ?? ''));
+  console.log(`[feed] binance ${config.symbol} via ${config.binanceWs}`);
   feed.on('error', (e) => console.error('[feed error]', e.message));
 } else {
-  feed = new SimFeed({ symbol: config.symbol, speed: Number(process.env.SIM_SPEED || 12) });
-  console.log('[feed] simulator — set FEED=binance for live data');
+  feed = new SimFeed({ symbol: config.symbol, speed: config.simSpeed });
+  console.log(`[feed] simulator at ${config.simSpeed}x real time — use "npm run live" for real ticks`);
 }
 feed.on('trade', (t) => engine.onTrade(t));
 feed.on('depth', (d) => engine.onDepth(d));

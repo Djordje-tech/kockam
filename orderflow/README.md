@@ -5,17 +5,38 @@ absorption, iceberg detection, liquidity sweeps, volume profile and a live GEX
 map — built from market microstructure first principles on data feeds that cost
 nothing.
 
-Run it:
+## Getting it running
+
+Needs Node 20 or newer. From a fresh machine — Windows `cmd`, PowerShell,
+macOS or Linux, the commands are identical:
 
 ```bash
-cd orderflow
+git clone https://github.com/Djordje-tech/kockam.git
+cd kockam/orderflow
 npm install
+
 npm run sim      # synthetic market, no network needed
 npm run live     # Binance USD-M futures, real ticks
 npm test
 ```
 
 Then open <http://localhost:5174>.
+
+`npm run` has to be issued from inside `kockam/orderflow` — that is where this
+`package.json` lives. Running it from your home directory gives
+`Missing script: "sim"`.
+
+Every setting is a flag, so nothing depends on shell-specific syntax:
+
+```bash
+npm run live -- --symbol=ETHUSDT --tick-size=0.01 --tick-agg=10
+node src/server.js --feed=sim --speed=40 --bar-ms=15000 --port=8080
+```
+
+If the live feed cannot reach the venue — it is blocked in some countries, and
+corporate proxies often refuse websockets — it retries with backoff and then
+tells you so. Point it at a reachable endpoint with `--rest=` and `--ws=`, or
+stay on `npm run sim` in the meantime.
 
 ## Why this can be free
 
@@ -136,21 +157,21 @@ inflates iceberg counts under `FEED=sim` relative to `FEED=binance`.
 
 ## Configuration
 
-Everything tunable lives in `src/config.js` and can be overridden by
-environment variable:
+Everything tunable lives in `src/config.js`. Each setting resolves as
+**flag, then environment variable, then default** — flags exist because
+`FEED=sim node ...` is POSIX-only shell syntax that fails in Windows `cmd` and
+PowerShell.
 
-```bash
-FEED=binance SYMBOL=ETHUSDT TICK_SIZE=0.01 TICK_AGG=5 BAR_MS=60000 npm start
-```
-
-| Variable | Meaning |
-|---|---|
-| `FEED` | `sim` or `binance` |
-| `SYMBOL` | contract, e.g. `BTCUSDT` |
-| `TICK_SIZE` / `TICK_AGG` | footprint rows are `TICK_SIZE * TICK_AGG` wide |
-| `BAR_MS` | bar interval |
-| `OPTIONS_FEED` | `deribit` or `sim` |
-| `SIM_SPEED` | simulator speed as a multiple of real time |
+| Flag | Env | Meaning |
+|---|---|---|
+| `--feed=` | `FEED` | `sim` or `binance` |
+| `--symbol=` | `SYMBOL` | contract, e.g. `BTCUSDT` |
+| `--tick-size=` / `--tick-agg=` | `TICK_SIZE` / `TICK_AGG` | footprint rows are their product |
+| `--bar-ms=` | `BAR_MS` | bar interval |
+| `--port=` | `PORT` | http port, default 5174 |
+| `--speed=` | `SIM_SPEED` | simulator speed as a multiple of real time |
+| `--options-feed=` | `OPTIONS_FEED` | `deribit` or `sim` |
+| `--rest=` / `--ws=` | `BINANCE_REST` / `BINANCE_WS` | override venue endpoints |
 
 ## Controls
 

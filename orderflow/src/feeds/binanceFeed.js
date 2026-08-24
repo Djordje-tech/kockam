@@ -19,8 +19,8 @@ export class BinanceFeed extends EventEmitter {
     super();
     this.symbol = (opts.symbol ?? config.symbol).toUpperCase();
     this.lower = this.symbol.toLowerCase();
-    this.rest = opts.rest ?? 'https://fapi.binance.com';
-    this.wsBase = opts.ws ?? 'wss://fstream.binance.com';
+    this.rest = opts.rest ?? config.binanceRest;
+    this.wsBase = opts.ws ?? config.binanceWs;
     this.buffer = [];
     this.synced = false;
     this.lastUpdateId = 0;
@@ -34,6 +34,7 @@ export class BinanceFeed extends EventEmitter {
 
   stop() {
     this.stopped = true;
+    clearTimeout(this.reconnectTimer);
     try { this.ws?.close(); } catch { /* already gone */ }
   }
 
@@ -45,6 +46,7 @@ export class BinanceFeed extends EventEmitter {
 
     ws.addEventListener('open', () => {
       this.retries = 0;
+      this.everConnected = true;
       this.emit('status', { state: 'connected', url });
       this._resync().catch((e) => this.emit('error', e));
     });
@@ -56,16 +58,38 @@ export class BinanceFeed extends EventEmitter {
     ws.addEventListener('close', () => this._reconnect('closed'));
     ws.addEventListener('error', (e) => {
       this.emit('error', e.message ? new Error(e.message) : new Error('websocket error'));
+      // A failed handshake raises `error` without ever raising `close`, so
+      // reconnecting only from `close` leaves the feed silently dead — which
+      // is exactly the case that matters, since it is how an unreachable or
+      // blocked endpoint presents.
+      this._reconnect('error');
     });
   }
 
   _reconnect(why) {
     if (this.stopped) return;
+    // `error` and `close` can both fire for one failure; schedule once.
+    if (this.reconnectTimer) return;
     this.synced = false;
     this.buffer = [];
     const delay = Math.min(30_000, 1000 * 2 ** this.retries++);
     this.emit('status', { state: 'reconnecting', why, delay });
-    setTimeout(() => this._connect(), delay);
+    // Repeated failures before a single successful frame are almost never
+    // transient — the usual causes are the venue being unreachable from the
+    // caller's country or a corporate proxy blocking websockets — so say so
+    // instead of retrying silently forever.
+    if (this.retries === 3 && !this.everConnected) {
+      this.emit('status', {
+        state: 'unreachable',
+        why: `could not reach ${this.wsBase}. If the venue is blocked where you are, ` +
+             'point the feed elsewhere with --rest=<https url> --ws=<wss url>, ' +
+             'or run "npm run sim" meanwhile.',
+      });
+    }
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this._connect();
+    }, delay);
   }
 
   _route(d) {

@@ -1,22 +1,47 @@
 // Central tuning surface. Everything a detector needs to be re-tuned per
 // instrument lives here so the engine code stays free of magic numbers.
 
+/**
+ * Settings resolve as: command-line flag, then environment variable, then the
+ * default here. Flags matter because `FEED=sim node ...` is POSIX-only shell
+ * syntax — it fails outright in Windows cmd and PowerShell — so every npm
+ * script passes `--feed=sim` instead and works the same on all three.
+ */
 const env = process.env;
 
+const flags = new Map(
+  process.argv.slice(2)
+    .filter((a) => a.startsWith('--'))
+    .map((a) => {
+      const i = a.indexOf('=');
+      return i === -1 ? [a.slice(2), 'true'] : [a.slice(2, i), a.slice(i + 1)];
+    }),
+);
+
+/** @param {string} flag CLI name, @param {string} envName env var name */
+const opt = (flag, envName, fallback) => flags.get(flag) ?? env[envName] ?? fallback;
+const num = (flag, envName, fallback) => Number(opt(flag, envName, fallback));
+
+const feed = String(opt('feed', 'FEED', 'sim')).toLowerCase();
+
 export const config = {
-  feed: env.FEED || 'sim',              // 'sim' | 'binance'
-  symbol: (env.SYMBOL || 'BTCUSDT').toUpperCase(),
-  optionsFeed: env.OPTIONS_FEED || (env.FEED === 'binance' ? 'deribit' : 'sim'),
-  optionsCurrency: env.OPTIONS_CURRENCY || 'BTC',
-  port: Number(env.PORT || 5174),
+  feed,                                 // 'sim' | 'binance'
+  symbol: String(opt('symbol', 'SYMBOL', 'BTCUSDT')).toUpperCase(),
+  optionsFeed: opt('options-feed', 'OPTIONS_FEED', feed === 'binance' ? 'deribit' : 'sim'),
+  optionsCurrency: opt('options-currency', 'OPTIONS_CURRENCY', 'BTC'),
+  port: num('port', 'PORT', 5174),
+  simSpeed: num('speed', 'SIM_SPEED', 12),
+  // Overridable so a blocked or regional endpoint can be pointed elsewhere.
+  binanceRest: opt('rest', 'BINANCE_REST', 'https://fapi.binance.com'),
+  binanceWs: opt('ws', 'BINANCE_WS', 'wss://fstream.binance.com'),
 
   // Price bucketing. Footprint rows are tickSize * tickAggregation wide.
-  tickSize: Number(env.TICK_SIZE || 1),
-  tickAggregation: Number(env.TICK_AGG || 5),
+  tickSize: num('tick-size', 'TICK_SIZE', 1),
+  tickAggregation: num('tick-agg', 'TICK_AGG', 5),
 
   // Bar construction
   bar: {
-    intervalMs: Number(env.BAR_MS || 60_000),
+    intervalMs: num('bar-ms', 'BAR_MS', 60_000),
     maxBars: 600,
   },
 
