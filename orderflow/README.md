@@ -154,6 +154,18 @@ of the excursion*, i.e. the people who chased it are underwater at the close.
 **Volume profile (`volumeProfile.js`)** — session profile, 70% value area,
 HVN/LVN from a smoothed profile, and naked points of control carried forward.
 
+**Sessions and levels (`sessions.js`, `vwap.js`)** — a continuous stream has no
+boundaries but the market does. Globex opens at 18:00 New York and the trading
+day starts there, not at midnight and not at the cash open, so that is where
+the profile, cumulative delta and VWAP reset and where yesterday becomes
+reference rather than being thrown away. Out of that fall the levels a futures
+day is actually traded off: prior day high, low, close, POC and value area
+(PDH/PDL/PDC/PDPOC/PDVAH/PDVAL), the overnight range (ONH/ONL), the first hour's
+initial balance (IBH/IBL) and the cash open. Each one is fed straight to the
+sweep detector, because that is exactly where the stops are. VWAP carries ±1σ
+and ±2σ bands computed from running sums, and the header reports position in
+deviations rather than points, which mean nothing without the day's range.
+
 **Dealer gamma (`gamma.js`, `blackScholes.js`)** — Black-Scholes gamma per
 contract from mark IV and open interest, aggregated by strike as dollar-delta
 rehedged per 1% spot move, with dealers assumed long calls and short puts. Net

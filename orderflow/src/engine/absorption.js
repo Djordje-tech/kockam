@@ -123,7 +123,7 @@ export class AbsorptionDetector {
    * An absorption level that later gives way is not noise — it is the stronger
    * signal, because the passive side just capitulated. We surface both.
    */
-  onPriceUpdate(price) {
+  onPriceUpdate(price, ts) {
     const row = toRow(price);
     const broken = [];
     for (const z of this.active) {
@@ -136,7 +136,10 @@ export class AbsorptionDetector {
         broken.push({
           type: 'absorptionFailed',
           bias: z.bias === 'bullish' ? 'bearish' : 'bullish',
-          ts: Date.now(), price, level: z.price,
+          // Market time, not wall clock: a signal stamped with the local clock
+          // sorts wrongly against every other signal and makes any replay or
+          // after-the-fact scoring meaningless.
+          ts, price, level: z.price,
           note: 'absorbing side gave up — trapped passive liquidity',
           strength: z.strength,
         });

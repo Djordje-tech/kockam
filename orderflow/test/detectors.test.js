@@ -91,9 +91,10 @@ test('absorption that breaks reports the failure as the opposite signal', () => 
   const book = new OrderBook();
   book.applySnapshot({ bids: [[100, 500]], asks: [[101, 5]] });
   for (let i = 0; i < 40; i++) det.onTrade({ ts: 1000 + i * 10, price: 100, qty: 5, side: 'sell' }, book);
-  const broken = det.onPriceUpdate(80);
+  const broken = det.onPriceUpdate(80, 9_999);
   assert.equal(broken.length, 1);
   assert.equal(broken[0].type, 'absorptionFailed');
+  assert.equal(broken[0].ts, 9_999, 'signals are stamped with market time, not the local clock');
   assert.equal(broken[0].bias, 'bearish', 'the holder capitulated, so price goes with the sellers');
 });
 

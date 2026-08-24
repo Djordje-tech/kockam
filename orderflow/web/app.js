@@ -21,8 +21,9 @@ const state = {
   absorptionZones: [], icebergWalls: [], nakedPocs: [], referenceLevels: [],
   last: { price: 0, ts: 0 }, session: {}, dayStats: {},
   sideQuality: null, instrument: null,
-  toggles: { footprint: true, imbalance: true, profile: true,
-             gammaLevels: true, signals: true, liquidity: true },
+  sessions: null,
+  toggles: { footprint: true, imbalance: true, profile: true, gammaLevels: true,
+             signals: true, liquidity: true, vwap: true, levels: true },
 };
 
 const el = (id) => document.getElementById(id);
@@ -72,6 +73,7 @@ function applySnapshot(d) {
   state.referenceLevels = d.referenceLevels;
   state.last = d.last;
   state.session = d.session;
+  state.sessions = d.sessions;
   state.dayStats = d.dayStats;
   state.sideQuality = d.sideQuality;
   state.instrument = d.instrument;
@@ -105,7 +107,8 @@ function applyFrame(f) {
   if (f.referenceLevels) state.referenceLevels = f.referenceLevels;
   if (f.absorptionZones) state.absorptionZones = f.absorptionZones;
   if (f.icebergWalls) state.icebergWalls = f.icebergWalls;
-  if (f.session) Object.assign(state.session, f.session);
+  if (f.session) state.session = f.session;
+  if (f.sessions) state.sessions = f.sessions;
   if (f.signals?.length) {
     state.signals.push(...f.signals);
     if (state.signals.length > 200) state.signals.splice(0, state.signals.length - 200);
@@ -213,6 +216,15 @@ function renderHeader() {
   el('last').textContent = fmtPrice(state.last.price);
   const s = state.session;
   el('range').textContent = s.high ? `${fmtPrice(s.low)} – ${fmtPrice(s.high)}` : '—';
+  const v = state.sessions?.vwap;
+  el('vwap').textContent = v?.vwap ? fmtPrice(v.vwap) : '—';
+  if (v?.vwap && state.last.price) {
+    // Position relative to VWAP in deviations is the number that matters, not
+    // the distance in points, which means nothing without the day's range.
+    const devs = v.sigma ? (state.last.price - v.vwap) / v.sigma : 0;
+    el('vwap').style.color = devs > 0 ? 'var(--buy)' : 'var(--sell)';
+    el('vwap').title = `${devs >= 0 ? '+' : ''}${devs.toFixed(2)}σ from session VWAP`;
+  }
   el('cvd').textContent = fmtQty(state.cvdLive ?? 0);
   el('cvd').style.color = (state.cvdLive ?? 0) >= 0 ? 'var(--buy)' : 'var(--sell)';
   const p = state.book?.pressure ?? 0;
@@ -256,7 +268,8 @@ document.querySelectorAll('[data-toggle]').forEach((btn) => {
 });
 
 document.addEventListener('keydown', (e) => {
-  const map = { f: 'footprint', i: 'imbalance', p: 'profile', g: 'gammaLevels', s: 'signals', l: 'liquidity' };
+  const map = { f: 'footprint', i: 'imbalance', p: 'profile', g: 'gammaLevels',
+                s: 'signals', l: 'liquidity', v: 'vwap', k: 'levels' };
   const key = map[e.key.toLowerCase()];
   if (!key) return;
   state.toggles[key] = !state.toggles[key];

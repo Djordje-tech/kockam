@@ -62,7 +62,9 @@ if (config.feed === 'tastytrade' || config.feed === 'dxlink') {
   console.log(`[feed] binance ${config.symbol} via ${config.binanceWs}`);
   feed.on('error', (e) => console.error('[feed error]', e.message));
 } else {
-  feed = new SimFeed({ symbol: config.symbol, speed: config.simSpeed });
+  const startTs = config.simStart ? Date.parse(config.simStart) : undefined;
+  feed = new SimFeed({ symbol: config.symbol, speed: config.simSpeed,
+                       startTs: Number.isFinite(startTs) ? startTs : undefined });
   console.log(`[feed] simulator at ${config.simSpeed}x real time — "npm run futures" for MNQ/MES/NQ`);
 }
 feed.on('trade', (t) => engine.onTrade(t));
@@ -153,11 +155,8 @@ setInterval(() => {
     absorptionZones: engine.absorption.activeZones(),
     icebergWalls: engine.iceberg.activeWalls(),
     signalStats: pendingOutcomes.length || pendingSignals.length ? engine.scorer.table() : null,
-    session: {
-      high: Number.isFinite(engine.session.high) ? engine.session.high : null,
-      low: Number.isFinite(engine.session.low) ? engine.session.low : null,
-      volume: engine.session.volume,
-    },
+    session: engine.sessions.snapshot().session,
+    sessions: frameCounter % 20 === 0 ? engine.sessions.snapshot() : null,
     profile: frameCounter++ % 20 === 0 ? engine.sessionProfile.serialize(200) : null,
     sideQuality: frameCounter % 10 === 0 ? engine.classifier.quality() : null,
     instrument: frameCounter % 50 === 0 ? engine.instrument : null,

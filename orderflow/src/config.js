@@ -40,6 +40,9 @@ export const config = {
   optionsCurrency: opt('options-currency', 'OPTIONS_CURRENCY', 'BTC'),
   port: num('port', 'PORT', 5174),
   simSpeed: num('speed', 'SIM_SPEED', 12),
+  // Lets a run start at a chosen market time, so session rolls and the cash
+  // open can be exercised without waiting for the clock.
+  simStart: opt('sim-start', 'SIM_START', ''),
   // Overridable so a blocked or regional endpoint can be pointed elsewhere.
   binanceRest: opt('rest', 'BINANCE_REST', 'https://fapi.binance.com'),
   binanceWs: opt('ws', 'BINANCE_WS', 'wss://fstream.binance.com'),

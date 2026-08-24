@@ -102,6 +102,8 @@ export class FootprintChart {
     this._grid(ctx, topRow, rowsOnScreen, plotW, axisW);
     if (s.toggles.liquidity) this._liquidityHeat(ctx, plotW, yOf);
     if (s.toggles.profile) this._profile(ctx, plotW, yOf);
+    if (s.toggles.vwap) this._vwap(ctx, plotW, yOf);
+    if (s.toggles.levels) this._sessionLevels(ctx, plotW, yOf);
     this._levels(ctx, plotW, yOf);
 
     const maxRowVol = this._maxRowVolume(slice);
@@ -287,6 +289,52 @@ export class FootprintChart {
     }
   }
 
+  /**
+   * Session VWAP and its deviation bands. Drawn under everything else because
+   * it is a reference the rest of the chart is read against, not a signal.
+   */
+  _vwap(ctx, plotW, yOf) {
+    const v = this.state.sessions?.vwap;
+    if (!v?.vwap) return;
+    const band = (price, alpha) => {
+      const y = yOf(this.toRow(price));
+      if (y < 0 || y > this.h) return;
+      ctx.strokeStyle = `rgba(139,124,246,${alpha})`;
+      ctx.setLineDash([2, 4]);
+      ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(plotW, y + 0.5); ctx.stroke();
+      ctx.setLineDash([]);
+    };
+    band(v.upper2, 0.2); band(v.lower2, 0.2);
+    band(v.upper1, 0.32); band(v.lower1, 0.32);
+    this._hline(ctx, yOf(this.toRow(v.vwap)), plotW, 'rgba(139,124,246,.85)',
+                `VWAP ${fmtPrice(v.vwap)}`);
+  }
+
+  /**
+   * Prior day, overnight and initial balance levels — the marks a futures
+   * trader puts on a chart before the open, and where the stops sit.
+   */
+  _sessionLevels(ctx, plotW, yOf) {
+    const levels = this.state.sessions?.levels;
+    if (!levels?.length) return;
+    for (const lvl of levels) {
+      const color = LEVEL_COLORS[lvl.code] ?? 'rgba(107,120,137,.6)';
+      const y = yOf(this.toRow(lvl.price));
+      if (y < -20 || y > this.h + 20) continue;
+      ctx.save();
+      ctx.strokeStyle = color;
+      ctx.setLineDash(lvl.code.startsWith('PD') ? [] : [5, 3]);
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(plotW, y + 0.5); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.font = 'bold 9px ui-monospace, monospace';
+      ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+      ctx.fillStyle = color;
+      ctx.fillText(`${lvl.code} ${fmtPrice(lvl.price)}`, plotW - 4, y - 1);
+      ctx.restore();
+    }
+  }
+
   /** Gamma strikes, naked POCs and swept reference levels. */
   _levels(ctx, plotW, yOf) {
     const s = this.state;
@@ -412,6 +460,15 @@ export class FootprintChart {
     return { bar, cell, row, price: this.rowToPrice(row), x: h.clientX, y: h.clientY };
   }
 }
+
+/** Prior-day levels are solid and warm; intraday structure is dashed and cool. */
+const LEVEL_COLORS = {
+  PDH: 'rgba(240,180,41,.75)', PDL: 'rgba(240,180,41,.75)', PDC: 'rgba(240,180,41,.5)',
+  PDPOC: 'rgba(240,180,41,.6)', PDVAH: 'rgba(139,124,246,.55)', PDVAL: 'rgba(139,124,246,.55)',
+  ONH: 'rgba(96,165,250,.7)', ONL: 'rgba(96,165,250,.7)',
+  IBH: 'rgba(148,163,184,.7)', IBL: 'rgba(148,163,184,.7)',
+  RTHO: 'rgba(216,224,234,.5)',
+};
 
 const SIGNAL_ABBR = {
   absorption: 'ABS', absorptionFailed: 'ABS✗', iceberg: 'ICE',

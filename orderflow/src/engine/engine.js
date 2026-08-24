@@ -13,6 +13,7 @@ import { StopRunDetector } from './stopRun.js';
 import { RejectionDetector } from './rejection.js';
 import { computeGex } from './gamma.js';
 import { SignalScorer } from './scorer.js';
+import { SessionManager } from './sessions.js';
 
 /**
  * The orchestrator: one trade in, every derived view out.
@@ -46,9 +47,10 @@ export class OrderFlowEngine extends EventEmitter {
     this.signals = new Ring(300);
     this.tape = new Ring(3000);
     this.last = { price: 0, ts: 0 };
-    this.session = { high: -Infinity, low: Infinity, open: null, startTs: null, volume: 0 };
+    this.sessions = new SessionManager({ group: opts.group ?? 'equityIndex' });
     this.dayStats = { buyVolume: 0, sellVolume: 0 };
     this.instrument = null;
+    this._levelTick = 0;
   }
 
   /** What the feed actually connected to, for the header and the row sizing. */
@@ -69,7 +71,10 @@ export class OrderFlowEngine extends EventEmitter {
     this.tape.push(t);
     this.dayStats[t.side === 'buy' ? 'buyVolume' : 'sellVolume'] += t.qty;
 
-    this._updateSession(t);
+    const rolled = this.sessions.onTrade(t);
+    if (rolled) this._onSessionRoll(rolled);
+    this._trackExtremes(t);
+
     const level = this.book.recordTrade(t.price, t.qty);
     this.sessionProfile.onTrade(t);
     this.nakedPocs.onPrice(t.price);
@@ -80,7 +85,7 @@ export class OrderFlowEngine extends EventEmitter {
     // Detectors that read the tape directly.
     const abs = this.absorption.onTrade(t, this.book);
     if (abs) this._emitSignal(abs);
-    for (const b of this.absorption.onPriceUpdate(t.price)) this._emitSignal(b);
+    for (const b of this.absorption.onPriceUpdate(t.price, t.ts)) this._emitSignal(b);
 
     const bookSide = t.side === 'buy' ? 'ask' : 'bid';   // the passive side that got hit
     const ice = this.iceberg.onLevel(level, t.price, bookSide, t.ts);
@@ -113,12 +118,45 @@ export class OrderFlowEngine extends EventEmitter {
 
   // ---- derived ---------------------------------------------------------
 
-  _updateSession(t) {
-    const s = this.session;
-    if (s.open === null) { s.open = t.price; s.startTs = t.ts; }
-    if (t.price > s.high) { s.high = t.price; this.stopRun.setReferenceLevel('sessionHigh', s.high, 'session high'); }
-    if (t.price < s.low) { s.low = t.price; this.stopRun.setReferenceLevel('sessionLow', s.low, 'session low'); }
-    s.volume += t.qty;
+  /**
+   * The running extremes are their own stop pools, separate from the named
+   * levels the session manager publishes, and they move intraday.
+   */
+  _trackExtremes(t) {
+    const s = this.sessions.current;
+    if (!s) return;
+    if (t.price >= s.high) this.stopRun.setReferenceLevel('sessionHigh', s.high, 'session high');
+    if (t.price <= s.low) this.stopRun.setReferenceLevel('sessionLow', s.low, 'session low');
+    if (++this._levelTick % 500 === 0) this._publishSessionLevels();
+  }
+
+  /**
+   * A new trading day: yesterday's profile becomes reference rather than being
+   * thrown away, and the statistics that are only meaningful within a session
+   * — profile, cumulative delta, VWAP — start again.
+   */
+  _onSessionRoll(prior) {
+    if (prior.valueArea) {
+      this.nakedPocs.addSessionPoc(prior.valueArea.poc, Date.now());
+    }
+    this.sessionProfile = new VolumeProfile(this.sessions.dayKey ?? 'session');
+    // Cumulative delta is a within-session statistic: carrying it across the
+    // Globex open would make every divergence measured against yesterday.
+    this.cvd.value = 0;
+    this.dayStats = { buyVolume: 0, sellVolume: 0 };
+    this._publishSessionLevels();
+    this.emit('sessionRoll', prior);
+  }
+
+  _publishSessionLevels() {
+    for (const lvl of this.sessions.referenceLevels()) {
+      // The sweep detector decides direction from the label, so the names have
+      // to say which side of price a level represents.
+      const side = /high|HIGH|H$|VAH|ONH|IBH/.test(lvl.code) ? 'high'
+                 : /low|LOW|L$|VAL|ONL|IBL/.test(lvl.code) ? 'low'
+                 : lvl.price > this.last.price ? 'high' : 'low';
+      this.stopRun.setReferenceLevel(`ref:${lvl.code}`, lvl.price, `${lvl.label} (${side})`);
+    }
   }
 
   _onBarClose(bar) {
@@ -182,11 +220,8 @@ export class OrderFlowEngine extends EventEmitter {
       quote: this.quote ?? null,
       sideQuality: this.classifier.quality(),
       instrument: this.instrument ?? null,
-      session: {
-        ...this.session,
-        high: Number.isFinite(this.session.high) ? this.session.high : null,
-        low: Number.isFinite(this.session.low) ? this.session.low : null,
-      },
+      session: this.sessions.snapshot().session ?? { high: null, low: null, volume: 0 },
+      sessions: this.sessions.snapshot(),
       dayStats: this.dayStats,
       bars: this.bars.toArray().map(serializeBar),
       openBar: openBar ? serializeBar(openBar) : null,
