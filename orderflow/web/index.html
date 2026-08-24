@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Orderflow Terminal</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">ORDERFLOW<span>TERMINAL</span></div>
+    <div class="stat"><label>Symbol</label><b id="sym">—</b></div>
+    <div class="stat"><label>Last</label><b id="last" class="mono">—</b></div>
+    <div class="stat"><label>Session</label><b id="range" class="mono">—</b></div>
+    <div class="stat"><label>CVD</label><b id="cvd" class="mono">—</b></div>
+    <div class="stat"><label>Book</label><b id="pressure" class="mono">—</b></div>
+    <div class="stat"><label>Gamma</label><b id="regime">—</b></div>
+    <div class="spacer"></div>
+    <div class="toggles">
+      <button data-toggle="footprint" class="on">Footprint</button>
+      <button data-toggle="imbalance" class="on">Imbalance</button>
+      <button data-toggle="profile" class="on">Profile</button>
+      <button data-toggle="gammaLevels" class="on">Gamma</button>
+      <button data-toggle="signals" class="on">Signals</button>
+      <button data-toggle="liquidity" class="on">Liquidity</button>
+    </div>
+    <div id="status" class="status off">connecting</div>
+  </header>
+
+  <main>
+    <section class="chart-col">
+      <canvas id="chart"></canvas>
+      <canvas id="cvdchart"></canvas>
+    </section>
+    <aside class="side">
+      <div class="panel">
+        <h3>Depth <small id="spread"></small></h3>
+        <canvas id="ladder"></canvas>
+      </div>
+      <div class="panel grow">
+        <h3>Signals <small id="sigcount"></small></h3>
+        <div id="signals" class="signals"></div>
+      </div>
+      <div class="panel">
+        <h3>Live signal reliability</h3>
+        <table id="stats" class="stats"><tbody></tbody></table>
+      </div>
+      <div class="panel">
+        <h3>Dealer gamma <small id="gexmeta"></small></h3>
+        <canvas id="gex"></canvas>
+      </div>
+    </aside>
+  </main>
+  <div id="tooltip" class="tooltip"></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
