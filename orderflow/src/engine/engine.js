@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { config } from '../config.js';
 import { Ring } from '../core/ring.js';
 import { OrderBook } from '../core/orderBook.js';
+import { TradeClassifier } from '../core/tradeClassifier.js';
 import { toRow } from '../core/prices.js';
 import { FootprintBuilder, serializeBar } from './footprint.js';
 import { CvdTracker } from './cvd.js';
@@ -36,6 +37,10 @@ export class OrderFlowEngine extends EventEmitter {
     this.stopRun = new StopRunDetector();
     this.rejection = new RejectionDetector();
     this.scorer = new SignalScorer({ file: opts.statsFile });
+    // Crypto venues stamp the aggressor on every print; dxFeed only does when
+    // entitled, so the side is resolved here for every feed alike and the
+    // resolution quality is published with the data it produced.
+    this.classifier = new TradeClassifier(opts.classifier);
 
     this.gex = null;
     this.signals = new Ring(300);
@@ -43,11 +48,23 @@ export class OrderFlowEngine extends EventEmitter {
     this.last = { price: 0, ts: 0 };
     this.session = { high: -Infinity, low: Infinity, open: null, startTs: null, volume: 0 };
     this.dayStats = { buyVolume: 0, sellVolume: 0 };
+    this.instrument = null;
+  }
+
+  /** What the feed actually connected to, for the header and the row sizing. */
+  setInstrument(info) {
+    this.instrument = info;
   }
 
   // ---- ingestion -------------------------------------------------------
 
-  onTrade(t) {
+  onQuote(q) {
+    this.classifier.onQuote(q);
+    this.quote = q;
+  }
+
+  onTrade(raw) {
+    const t = { ...raw, side: this.classifier.classify(raw) };
     this.last = { price: t.price, ts: t.ts };
     this.tape.push(t);
     this.dayStats[t.side === 'buy' ? 'buyVolume' : 'sellVolume'] += t.qty;
@@ -162,6 +179,9 @@ export class OrderFlowEngine extends EventEmitter {
         barMs: config.bar.intervalMs,
       },
       last: this.last,
+      quote: this.quote ?? null,
+      sideQuality: this.classifier.quality(),
+      instrument: this.instrument ?? null,
       session: {
         ...this.session,
         high: Number.isFinite(this.session.high) ? this.session.high : null,

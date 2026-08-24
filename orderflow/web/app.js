@@ -20,6 +20,7 @@ const state = {
   signals: [], signalStats: [],
   absorptionZones: [], icebergWalls: [], nakedPocs: [], referenceLevels: [],
   last: { price: 0, ts: 0 }, session: {}, dayStats: {},
+  sideQuality: null, instrument: null,
   toggles: { footprint: true, imbalance: true, profile: true,
              gammaLevels: true, signals: true, liquidity: true },
 };
@@ -72,7 +73,10 @@ function applySnapshot(d) {
   state.last = d.last;
   state.session = d.session;
   state.dayStats = d.dayStats;
+  state.sideQuality = d.sideQuality;
+  state.instrument = d.instrument;
   el('sym').textContent = d.symbol;
+  renderInstrument();
   renderSignals(); renderStats(); renderGammaMeta();
 }
 
@@ -108,6 +112,8 @@ function applyFrame(f) {
     renderSignals();
   }
   if (f.signalStats) { state.signalStats = f.signalStats; renderStats(); }
+  if (f.sideQuality) state.sideQuality = f.sideQuality;
+  if (f.instrument) { state.instrument = f.instrument; renderInstrument(); }
   if (f.outcomes?.length) markOutcomes(f.outcomes);
 }
 
@@ -173,7 +179,37 @@ function renderGammaMeta() {
     : '';
 }
 
+function renderInstrument() {
+  const i = state.instrument;
+  el('contract').textContent = i?.resolved ?? '—';
+  el('contract').title = i
+    ? `${i.streamerSymbol} · tick ${i.tickSize}${i.expiresAt ? ` · expires ${i.expiresAt.slice(0, 10)}` : ''}`
+    : '';
+}
+
+/**
+ * How the aggressor side was resolved. A footprint built from an entitled
+ * aggressor flag and one inferred from the tick rule are not the same claim,
+ * and the trader is entitled to know which one they are reading.
+ */
+function renderSideQuality() {
+  const q = state.sideQuality;
+  const node = el('sidequality');
+  if (!q?.total) { node.textContent = '—'; return; }
+  const pct = Math.round(q.confidence * 100);
+  const source = q.explicit / q.total > 0.9 ? 'aggressor'
+               : q.explicit > 0 ? 'mixed'
+               : q.quote / q.total > 0.7 ? 'quote rule'
+               : 'inferred';
+  node.textContent = `${pct}% ${source}`;
+  node.style.color = pct >= 95 ? 'var(--buy)' : pct >= 80 ? 'var(--accent)' : 'var(--sell)';
+  el('sidequality-wrap').title =
+    `${q.explicit} from the feed's aggressor flag, ${q.quote} by the quote rule, ` +
+    `${q.midpoint} split on the midpoint, ${q.tick} by the tick rule`;
+}
+
 function renderHeader() {
+  renderSideQuality();
   el('last').textContent = fmtPrice(state.last.price);
   const s = state.session;
   el('range').textContent = s.high ? `${fmtPrice(s.low)} – ${fmtPrice(s.high)}` : '—';

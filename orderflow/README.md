@@ -1,9 +1,9 @@
 # Orderflow Terminal
 
-A real-time order flow, liquidity and dealer-gamma terminal. Footprint charts,
-absorption, iceberg detection, liquidity sweeps, volume profile and a live GEX
-map — built from market microstructure first principles on data feeds that cost
-nothing.
+A real-time order flow, liquidity and dealer-gamma terminal for **futures and
+equities** — MNQ, MES, NQ, ES, QQQ — with a crypto path alongside it. Footprint
+charts, absorption, iceberg detection, liquidity sweeps, volume profile and a
+live dealer gamma map, built from market microstructure first principles.
 
 ## Getting it running
 
@@ -15,8 +15,12 @@ git clone https://github.com/Djordje-tech/kockam.git
 cd kockam/orderflow
 npm install
 
-npm run sim      # synthetic market, no network needed
-npm run live     # Binance USD-M futures, real ticks
+npm run sim      # synthetic market, no account or network needed
+npm run mnq      # live MNQ via tastytrade + dxFeed  (needs .env, see below)
+npm run mes      # live MES
+npm run nq       # live NQ
+npm run qqq      # live QQQ
+npm run live     # Binance USD-M futures (crypto path)
 npm test
 ```
 
@@ -38,20 +42,79 @@ corporate proxies often refuse websockets — it retries with backoff and then
 tells you so. Point it at a reachable endpoint with `--rest=` and `--ws=`, or
 stay on `npm run sim` in the meantime.
 
-## Why this can be free
+## Live futures: tastytrade + dxFeed
 
-Commercial order flow platforms are expensive mostly because CME order-by-order
-data is expensive — the software rents you an entitlement. Crypto perpetual
-venues publish the same class of data with no entitlement, no exchange fee and
-no delayed tier:
+Set up once:
+
+```bash
+cp .env.example .env      # then fill in TT_LOGIN and TT_PASSWORD
+npm run mnq
+```
+
+`.env` is git-ignored and the session token is held in memory only. After the
+first login tastytrade issues a remember token; put it in `TT_REMEMBER_TOKEN`
+and clear `TT_PASSWORD` if you would rather not keep a password on disk.
+
+The tastytrade API itself is free with an account, and dxFeed is the same data
+vendor the commercial order-flow platforms run on. What is *not* free is the
+CME data subscription — enable it in tastytrade's own settings. That fee is
+the real reason those platforms cost what they cost: you are renting an
+entitlement, not software.
+
+**Symbols.** `MNQ`, `MNQ1!`, `/MNQ` and `mnq` all mean the front month, and the
+venue is asked which contract that currently is, because the roll follows
+volume rather than the calendar. A dated contract like `MNQZ5` is charted as
+itself. Tick size comes back with the contract, and footprint rows are sized
+from it — 1.00-point rows on a 0.25-tick index future, 5-cent rows on an ETF.
+
+**Gamma.** Nasdaq futures are moved by the gamma sitting in QQQ and NDX, not by
+options on the future itself, so charting MNQ against MNQ's own thin chain
+would draw a map of the wrong market. MNQ and NQ map to QQQ, MES and ES to SPY,
+RTY to IWM; override with `--gamma-underlying=`.
+
+**What each entitlement gets you.** Depth of market and the aggressor flag on
+`TimeAndSale` are separately entitled at dxFeed. The terminal works at every
+level and tells you which one you are on rather than pretending:
+
+| | With depth + aggressor | Aggressor only | Neither |
+|---|---|---|---|
+| Footprint, delta, CVD, profile, imbalances | yes | yes | yes, inferred sides |
+| Rejection, stacked zones, sweeps | yes | yes | yes |
+| Absorption | yes | partial | partial |
+| Icebergs, book pressure, ladder | yes | no | no |
+
+## Who was the aggressor
+
+Everything downstream — delta, footprint, absorption, CVD — rests on "did this
+print lift the offer or hit the bid". Crypto venues stamp it on every trade.
+Most equity and futures feeds do not: dxFeed's `Trade` event carries no side at
+all, and `TimeAndSale` carries `aggressorSide` only when entitled.
+
+`src/core/tradeClassifier.js` resolves it in descending order of trust: the
+feed's own flag, then the quote rule (at or above the ask is a buy, at or below
+the bid is a sell), then which side of the midpoint a print inside the spread
+landed on, then the tick rule. That is Lee-Ready, with the one refinement that
+matters live — quotes routinely update *ahead* of the print that caused them,
+so classification runs against the quote that was standing 250ms earlier
+rather than the instantaneous one.
+
+The header then reports what actually happened: `100% aggressor` means the feed
+told us, `78% inferred` means most of the chart is a reconstruction. A
+footprint built from an entitled flag and one built from the tick rule are not
+the same claim, and the trader reading it is entitled to know which they have.
+
+## The crypto path
+
+`npm run live` runs the same engine on Binance USD-M futures, where the data
+happens to be free and unentitled:
 
 | What the analysis needs | Where it comes from | Cost |
 |---|---|---|
 | Tick-by-tick prints **with the taker side** | Binance `aggTrade` (`m` flag) | free |
 | Full L2 book, 100ms diffs | Binance `depth@100ms` + REST snapshot | free |
-| Complete listed options chain with OI and IV | Deribit `get_book_summary_by_currency` | free |
+| Listed options chain with OI and IV | Deribit `get_book_summary_by_currency` | free |
 
-That is everything the engine consumes. No key, no subscription, no delay.
+Useful for testing detectors against real flow at 3am without a data bill.
 
 ## What it computes
 
@@ -114,7 +177,9 @@ the opposite of how indicator suites are normally sold.
 ## Architecture
 
 ```
-feed (binance | sim) ──► engine ──► detectors ──► signals ──► scorer
+feed (tastytrade | binance | sim)
+        │
+        ├─ trades ──► classifier ──► engine ──► detectors ──► signals ──► scorer
                            │                         │
                            ├──► footprint bars       └──► reliability table
                            ├──► volume profile
@@ -164,13 +229,16 @@ PowerShell.
 
 | Flag | Env | Meaning |
 |---|---|---|
-| `--feed=` | `FEED` | `sim` or `binance` |
+| `--feed=` | `FEED` | `tastytrade`, `binance` or `sim` |
 | `--symbol=` | `SYMBOL` | contract, e.g. `BTCUSDT` |
 | `--tick-size=` / `--tick-agg=` | `TICK_SIZE` / `TICK_AGG` | footprint rows are their product |
 | `--bar-ms=` | `BAR_MS` | bar interval |
 | `--port=` | `PORT` | http port, default 5174 |
 | `--speed=` | `SIM_SPEED` | simulator speed as a multiple of real time |
 | `--options-feed=` | `OPTIONS_FEED` | `deribit` or `sim` |
+| `--gamma-underlying=` | `GAMMA_UNDERLYING` | which chain builds the gamma map |
+| `--depth=` | `TT_DEPTH` | depth-of-market levels to request |
+| — | `TT_LOGIN` / `TT_PASSWORD` / `TT_REMEMBER_TOKEN` | tastytrade credentials, from `.env` |
 | `--rest=` / `--ws=` | `BINANCE_REST` / `BINANCE_WS` | override venue endpoints |
 
 ## Controls
@@ -191,13 +259,18 @@ numbers, imbalances, profile, gamma levels, signals and the liquidity strip.
 
 ## Status
 
-The engine, detectors, scoring, gamma map and terminal all work end to end
-against the simulator, and the unit and replay tests cover the maths and every
-detector. The Binance and Deribit feeds are written against the documented
-protocols — including the buffer/snapshot/resync sequence the depth diff stream
-requires — but have not been run against the live venues from this environment,
-which has no outbound access to either. Run `npm run live` on a machine that
-does before trusting a number.
+The engine, detectors, scoring, gamma map and terminal work end to end against
+the simulator, and 30 unit and replay tests cover the maths, the classifier,
+the contract and session logic, and every detector.
+
+The live feeds are written against documented protocols and, for tastytrade,
+against the official `@dxfeed/dxlink-api` client and the tastytrade SDK's own
+endpoints — so there is no guessed wire format anywhere. But this development
+environment has no outbound access to tastytrade, dxFeed, Binance or Deribit,
+so **no live venue path has been exercised end to end**. Symbol resolution,
+entitlement fallbacks and the depth translation are written carefully and
+tested where they are pure functions; they have not seen a real session. Run
+`npm run mnq` on a machine with access before trusting a number on the screen.
 
 Not included, and worth knowing before you rely on this: no order entry, no
 broker connectivity, no historical replay from recorded data, and no

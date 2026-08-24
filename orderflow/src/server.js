@@ -3,11 +3,15 @@ import { fileURLToPath } from 'node:url';
 import http from 'node:http';
 import express from 'express';
 import { WebSocketServer } from 'ws';
-import { config } from './config.js';
+import { config, applyInstrument, defaultAggregation } from './config.js';
 import { OrderFlowEngine } from './engine/engine.js';
 import { SimFeed, simOptionsChain } from './feeds/simFeed.js';
 import { BinanceFeed } from './feeds/binanceFeed.js';
 import { fetchDeribitChain } from './feeds/deribitOptions.js';
+import { DxLinkFeed } from './feeds/dxlinkFeed.js';
+import { TastytradeApi } from './feeds/tastytradeApi.js';
+import { DxLinkOptionsCollector, gammaUnderlyingFor } from './feeds/dxlinkOptions.js';
+import { parseSymbol } from './instruments/futures.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -22,14 +26,44 @@ const engine = new OrderFlowEngine({
 // ---- feed wiring --------------------------------------------------------
 
 let feed;
-if (config.feed === 'binance') {
+let optionsCollector = null;
+
+if (config.feed === 'tastytrade' || config.feed === 'dxlink') {
+  const api = new TastytradeApi();
+  feed = new DxLinkFeed({ api, symbol: config.symbol, depthLimit: config.tastytrade.depthLimit });
+  console.log(`[feed] tastytrade / dxFeed  ${config.symbol}`);
+
+  feed.on('instrument', (info) => {
+    // The venue decides the tick size and which contract is the front month;
+    // row aggregation follows from that rather than from a static default.
+    const parsed = parseSymbol(config.symbol);
+    applyInstrument({
+      tickSize: info.tickSize,
+      tickAggregation: defaultAggregation(parsed.spec.group),
+      symbol: info.resolved,
+    });
+    engine.setInstrument(info);
+    console.log(`[feed] ${info.requested} -> ${info.resolved} (${info.streamerSymbol}) ` +
+                `tick ${info.tickSize}, rows of ${config.tickSize * config.tickAggregation}`);
+
+    const { underlying, futuresProduct } = gammaUnderlyingFor(parsed.product);
+    optionsCollector = new DxLinkOptionsCollector({ api, feed, underlying, futuresProduct });
+    console.log(`[gamma] dealer gamma from ${futuresProduct ?? underlying} options`);
+  });
+
+  feed.on('quote', (q) => engine.onQuote(q));
+  feed.on('summary', (e) => optionsCollector?.onSummary(e));
+  feed.on('greeks', (e) => optionsCollector?.onGreeks(e));
+  feed.on('status', (s) => console.log('[feed]', s.state, s.why ?? s.url ?? ''));
+  feed.on('error', (e) => console.error('[feed error]', e.message));
+} else if (config.feed === 'binance') {
   feed = new BinanceFeed({ symbol: config.symbol });
   feed.on('status', (s) => console.log('[feed]', s.state, s.why ?? s.url ?? ''));
   console.log(`[feed] binance ${config.symbol} via ${config.binanceWs}`);
   feed.on('error', (e) => console.error('[feed error]', e.message));
 } else {
   feed = new SimFeed({ symbol: config.symbol, speed: config.simSpeed });
-  console.log(`[feed] simulator at ${config.simSpeed}x real time — use "npm run live" for real ticks`);
+  console.log(`[feed] simulator at ${config.simSpeed}x real time — "npm run futures" for MNQ/MES/NQ`);
 }
 feed.on('trade', (t) => engine.onTrade(t));
 feed.on('depth', (d) => engine.onDepth(d));
@@ -41,6 +75,19 @@ setInterval(() => engine.tick(), 1000).unref();
 
 async function refreshGamma() {
   try {
+    if (optionsCollector) {
+      const spot = engine.last.price;
+      if (!spot) return;
+      await optionsCollector.refresh(spot);
+      const chain = optionsCollector.chain();
+      const cov = optionsCollector.coverage();
+      if (!chain.length) {
+        console.log(`[gamma] waiting for open interest — ${cov.subscribed} contracts subscribed`);
+        return;
+      }
+      engine.onOptionsChain(chain, spot);
+      return;
+    }
     if (config.optionsFeed === 'deribit') {
       const { chain, spot } = await fetchDeribitChain();
       engine.onOptionsChain(chain, spot || engine.last.price);
@@ -112,6 +159,8 @@ setInterval(() => {
       volume: engine.session.volume,
     },
     profile: frameCounter++ % 20 === 0 ? engine.sessionProfile.serialize(200) : null,
+    sideQuality: frameCounter % 10 === 0 ? engine.classifier.quality() : null,
+    instrument: frameCounter % 50 === 0 ? engine.instrument : null,
     referenceLevels: frameCounter % 20 === 0 ? engine.stopRun.referenceLevels() : null,
   };
   broadcast(frame);

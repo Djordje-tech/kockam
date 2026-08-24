@@ -9,10 +9,18 @@
     "dev": "node --watch src/server.js",
     "sim": "node src/server.js --feed=sim",
     "live": "node src/server.js --feed=binance",
+    "futures": "node src/server.js --feed=tastytrade --symbol=MNQ",
+    "mnq": "node src/server.js --feed=tastytrade --symbol=MNQ",
+    "mes": "node src/server.js --feed=tastytrade --symbol=MES",
+    "nq": "node src/server.js --feed=tastytrade --symbol=NQ",
+    "qqq": "node src/server.js --feed=tastytrade --symbol=QQQ",
     "test": "node --test test/math.test.js test/detectors.test.js"
   },
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
+    "@dxfeed/dxlink-api": "^0.9.0",
     "express": "^4.21.2",
     "ws": "^8.21.3"
   }

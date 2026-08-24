@@ -7,6 +7,15 @@
  * syntax — it fails outright in Windows cmd and PowerShell — so every npm
  * script passes `--feed=sim` instead and works the same on all three.
  */
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+// Credentials live in orderflow/.env, which is git-ignored. Loaded by hand
+// rather than with a dependency: it is a dozen lines and one fewer thing to
+// audit for something that reads a password file.
+loadDotEnv();
+
 const env = process.env;
 
 const flags = new Map(
@@ -34,6 +43,20 @@ export const config = {
   // Overridable so a blocked or regional endpoint can be pointed elsewhere.
   binanceRest: opt('rest', 'BINANCE_REST', 'https://fapi.binance.com'),
   binanceWs: opt('ws', 'BINANCE_WS', 'wss://fstream.binance.com'),
+
+  // tastytrade + dxFeed: the futures and equities path.
+  tastytrade: {
+    baseUrl: opt('tt-url', 'TT_URL', 'https://api.tastyworks.com'),
+    login: opt('tt-login', 'TT_LOGIN', ''),
+    password: opt('tt-password', 'TT_PASSWORD', ''),
+    rememberToken: opt('tt-remember', 'TT_REMEMBER_TOKEN', ''),
+    depthLimit: num('depth', 'TT_DEPTH', 20),
+  },
+  // Which underlying's options build the gamma map. NQ and MNQ have no liquid
+  // options of their own worth mapping, so the Nasdaq gamma that actually
+  // moves them is QQQ's; left empty it is derived in resolveInstrument().
+  gammaUnderlying: opt('gamma-underlying', 'GAMMA_UNDERLYING', ''),
+  gammaMaxStrikes: num('gamma-strikes', 'GAMMA_STRIKES', 400),
 
   // Price bucketing. Footprint rows are tickSize * tickAggregation wide.
   tickSize: num('tick-size', 'TICK_SIZE', 1),
@@ -101,4 +124,50 @@ export const config = {
   },
 };
 
-export const rowSize = config.tickSize * config.tickAggregation;
+/**
+ * Footprint row width. A live feed resolves the real tick size at connect
+ * time, so this reads `config` on every call rather than freezing a value at
+ * import — a row size baked in before the instrument was known would silently
+ * bucket a 0.25-tick future as if it were a 1.00-tick one.
+ */
+export const rowSize = () => config.tickSize * config.tickAggregation;
+
+/** Applied once a feed reports what it actually connected to. */
+export function applyInstrument({ tickSize, tickAggregation, symbol }) {
+  if (tickSize > 0) config.tickSize = tickSize;
+  if (tickAggregation > 0) config.tickAggregation = tickAggregation;
+  if (symbol) config.resolvedSymbol = symbol;
+}
+
+/** Row aggregation that makes a readable footprint for each kind of product. */
+export function defaultAggregation(group) {
+  switch (group) {
+    case 'equityIndex': return 4;    // 1.00 point rows on a 0.25 tick
+    case 'etf': return 5;            // 5 cent rows
+    case 'energy': return 5;
+    case 'metals': return 5;
+    default: return config.tickAggregation;
+  }
+}
+
+function loadDotEnv() {
+  try {
+    const dir = path.dirname(fileURLToPath(import.meta.url));
+    const file = path.join(dir, '..', '.env');
+    if (!fs.existsSync(file)) return;
+    for (const line of fs.readFileSync(file, 'utf8').split(/\r?\n/)) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const i = trimmed.indexOf('=');
+      if (i === -1) continue;
+      const key = trimmed.slice(0, i).trim();
+      let value = trimmed.slice(i + 1).trim();
+      if ((value.startsWith('"') && value.endsWith('"')) ||
+          (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+      }
+      // Real environment variables win, so a shell override still works.
+      if (process.env[key] === undefined) process.env[key] = value;
+    }
+  } catch { /* a malformed .env should not stop the terminal booting */ }
+}
