@@ -314,71 +314,146 @@ end
 
 --- Look ------------------------------------------------------------------
 
-local function applyLighting()
-	-- Grouped in a pcall on purpose: engine properties change scriptability
-	-- between releases, and losing the whole world to one rejected assignment
-	-- is not a trade worth making for a colour tweak.
-	local ok, err = pcall(function()
-	-- Lighting.Technology is deliberately absent: it is not assignable from a
-	-- script, and setting it here threw before any terrain was written. It is
-	-- set in default.project.json instead.
-	Lighting.Brightness = 2.6
-	Lighting.ClockTime = 14
-	Lighting.GeographicLatitude = 0
-	Lighting.Ambient = Color3.fromRGB(28, 30, 34)
-	Lighting.OutdoorAmbient = Color3.fromRGB(96, 102, 112)
-	Lighting.EnvironmentDiffuseScale = 0.9
-	Lighting.EnvironmentSpecularScale = 0.8
-	Lighting.ExposureCompensation = 0.15
-
-	-- Terrain water only looks like water once it is told to move and reflect.
-	Workspace.Terrain.WaterColor = Color3.fromRGB(28, 84, 96)
-	Workspace.Terrain.WaterTransparency = 0.82
-	Workspace.Terrain.WaterReflectance = 0.55
-	Workspace.Terrain.WaterWaveSize = 0.12
-	Workspace.Terrain.WaterWaveSpeed = 8
-	end)
-
+-- Every group is pcall'd separately. Engine properties change scriptability
+-- between releases, and an entire landscape should never be lost to one
+-- rejected colour assignment — which is exactly what happened once already.
+local function guard(label: string, fn: () -> ())
+	local ok, err = pcall(fn)
 	if not ok then
-		warn(`[WorldService] some lighting properties were rejected: {err}`)
+		warn(`[WorldService] {label}: {err}`)
 	end
+end
 
-	-- Rebuild the effect stack from scratch so re-running is idempotent.
+local function applyLighting()
+	guard("lighting properties", function()
+		-- Technology is deliberately absent: it is not assignable from a
+		-- script. It is set in default.project.json instead.
+		Lighting.Brightness = 2.8
+		Lighting.ClockTime = 15.2
+		Lighting.GeographicLatitude = 8
+		Lighting.ExposureCompensation = 0.2
+
+		Lighting.Ambient = Color3.fromRGB(26, 29, 36)
+		Lighting.OutdoorAmbient = Color3.fromRGB(102, 110, 126)
+
+		-- Image-based lighting is what makes materials read as lit by the sky
+		-- rather than by a lamp. Turned most of the way up.
+		Lighting.EnvironmentDiffuseScale = 1
+		Lighting.EnvironmentSpecularScale = 1
+
+		-- Warm on the lit faces, cool in the shade. This split is most of what
+		-- separates a scene that looks photographed from one that looks flat.
+		Lighting.ColorShift_Top = Color3.fromRGB(38, 30, 16)
+		Lighting.ColorShift_Bottom = Color3.fromRGB(12, 18, 30)
+
+		-- Crisp, not pixelated and not cartoon-blurred.
+		Lighting.ShadowSoftness = 0.22
+	end)
+end
+
+local function applyEffects()
+	-- Rebuild from scratch so re-running never accumulates duplicates.
 	for _, existing in Lighting:GetChildren() do
 		if existing:IsA("PostEffect") or existing:IsA("Atmosphere") or existing:IsA("Sky") then
 			existing:Destroy()
 		end
 	end
 
-	local atmosphere = Instance.new("Atmosphere")
-	-- Haze is the setting that turns a landscape into soup. Kept low: enough
-	-- to give the mountains depth, not enough to hide them.
-	atmosphere.Density = 0.28
-	atmosphere.Offset = 0.1
-	atmosphere.Color = Color3.fromRGB(206, 210, 216)
-	atmosphere.Decay = Color3.fromRGB(128, 140, 158)
-	atmosphere.Glare = 0.08
-	atmosphere.Haze = 0.4
-	atmosphere.Parent = Lighting
+	guard("atmosphere", function()
+		local atmosphere = Instance.new("Atmosphere")
+		atmosphere.Density = 0.32
+		atmosphere.Offset = 0.25
+		atmosphere.Color = Color3.fromRGB(202, 208, 218)
+		atmosphere.Decay = Color3.fromRGB(96, 116, 148)
+		atmosphere.Glare = 0.2
+		-- Aerial perspective: enough haze that distant ridges sit behind near
+		-- ones, not so much that the map turns to soup.
+		atmosphere.Haze = 1.1
+		atmosphere.Parent = Lighting
+	end)
 
-	local bloom = Instance.new("BloomEffect")
-	bloom.Intensity = 0.3
-	bloom.Size = 20
-	bloom.Threshold = 1.5
-	bloom.Parent = Lighting
+	guard("sky", function()
+		local sky = Instance.new("Sky")
+		sky.SunAngularSize = 12
+		sky.MoonAngularSize = 9
+		sky.StarCount = 3000
+		sky.Parent = Lighting
+	end)
 
-	local sunRays = Instance.new("SunRaysEffect")
-	sunRays.Intensity = 0.06
-	sunRays.Spread = 0.42
-	sunRays.Parent = Lighting
+	guard("post stack", function()
+		local bloom = Instance.new("BloomEffect")
+		bloom.Intensity = 0.45
+		bloom.Size = 24
+		-- High threshold so only genuinely bright things bleed. A low
+		-- threshold is what makes a scene look washed out.
+		bloom.Threshold = 1.6
+		bloom.Parent = Lighting
 
-	local colour = Instance.new("ColorCorrectionEffect")
-	colour.Brightness = 0.01
-	colour.Contrast = 0.14
-	colour.Saturation = -0.06
-	colour.TintColor = Color3.fromRGB(250, 248, 242)
-	colour.Parent = Lighting
+		local sunRays = Instance.new("SunRaysEffect")
+		sunRays.Intensity = 0.06
+		sunRays.Spread = 1
+		sunRays.Parent = Lighting
 
+		local colour = Instance.new("ColorCorrectionEffect")
+		colour.Brightness = 0
+		colour.Contrast = 0.12
+		colour.Saturation = 0.06
+		colour.TintColor = Color3.fromRGB(255, 251, 244)
+		colour.Parent = Lighting
+
+		-- Near intensity stays at zero so whatever the player is standing next
+		-- to is always sharp; only the far ridgelines soften.
+		local depth = Instance.new("DepthOfFieldEffect")
+		depth.NearIntensity = 0
+		depth.FarIntensity = 0.32
+		depth.FocusDistance = 220
+		depth.InFocusRadius = 520
+		depth.Parent = Lighting
+	end)
+end
+
+local function applyTerrainLook()
+	local terrain = Workspace.Terrain
+
+	guard("water", function()
+		terrain.WaterColor = Color3.fromRGB(26, 78, 92)
+		terrain.WaterTransparency = 0.85
+		terrain.WaterReflectance = 0.6
+		terrain.WaterWaveSize = 0.1
+		terrain.WaterWaveSpeed = 10
+	end)
+
+	guard("terrain decoration", function()
+		-- Free grass tufts on every grass voxel. Nothing else in the engine
+		-- buys this much perceived detail for this little.
+		terrain.Decoration = true
+	end)
+
+	guard("material colours", function()
+		-- Roblox's defaults are saturated and toy-like. Desaturated, slightly
+		-- cooler values read as real ground.
+		terrain:SetMaterialColor(Enum.Material.Grass, Color3.fromRGB(88, 106, 66))
+		terrain:SetMaterialColor(Enum.Material.Ground, Color3.fromRGB(96, 86, 70))
+		terrain:SetMaterialColor(Enum.Material.Rock, Color3.fromRGB(102, 100, 98))
+		terrain:SetMaterialColor(Enum.Material.Slate, Color3.fromRGB(84, 84, 88))
+		terrain:SetMaterialColor(Enum.Material.Sand, Color3.fromRGB(168, 156, 128))
+		terrain:SetMaterialColor(Enum.Material.Snow, Color3.fromRGB(232, 236, 242))
+	end)
+
+	guard("clouds", function()
+		-- Volumetric clouds live under Terrain, not Lighting. They cast real
+		-- shadows across the landscape, which is what sells the scale.
+		local existing = terrain:FindFirstChildOfClass("Clouds")
+		if existing then
+			existing:Destroy()
+		end
+
+		local clouds = Instance.new("Clouds")
+		clouds.Cover = 0.62
+		clouds.Density = 0.7
+		clouds.Color = Color3.fromRGB(255, 253, 248)
+		clouds.Parent = terrain
+	end)
 end
 
 --- Spawn ----------------------------------------------------------------
@@ -410,6 +485,8 @@ function WorldService.start()
 	end
 
 	applyLighting()
+	applyEffects()
+	applyTerrainLook()
 	buildSpawn()
 	buildTerrain()
 	buildForest()
