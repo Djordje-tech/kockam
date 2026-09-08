@@ -42,8 +42,24 @@ function Net.event(name: string): RemoteEvent
 end
 
 -- Client side: blocks until the server has published the remote.
-function Net.waitForEvent(name: string): RemoteEvent
-	return folder():WaitForChild(name) :: RemoteEvent
+--
+-- Bounded rather than infinite. If the server never gets far enough to create
+-- its remotes, an unbounded wait hides that behind a silent hang; this way the
+-- output names the remote that never arrived.
+function Net.waitForEvent(name: string, timeout: number?): RemoteEvent
+	local seconds = timeout or 20
+
+	local parent = ReplicatedStorage:WaitForChild(FOLDER_NAME, seconds)
+	if not parent then
+		error(`[Net] '{FOLDER_NAME}' never appeared - the server did not finish starting`, 0)
+	end
+
+	local remote = parent:WaitForChild(name, seconds)
+	if not remote then
+		error(`[Net] remote '{name}' never appeared - the server did not publish it`, 0)
+	end
+
+	return remote :: RemoteEvent
 end
 
 return Net

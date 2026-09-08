@@ -399,8 +399,8 @@ function WorldService.start()
 	end
 
 	applyLighting()
-	buildTerrain()
 	buildSpawn()
+	buildTerrain()
 	buildForest()
 
 	print("[Quarantine Zone] world ready")
