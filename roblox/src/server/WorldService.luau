@@ -12,7 +12,10 @@
 -- asphalt is not soil.
 
 local Lighting = game:GetService("Lighting")
+local ServerScriptService = game:GetService("ServerScriptService")
 local Workspace = game:GetService("Workspace")
+
+local AssetLibrary = require(ServerScriptService:WaitForChild("Server"):WaitForChild("AssetLibrary"))
 
 local WorldService = {}
 
@@ -659,10 +662,16 @@ local function buildForest()
 		end
 
 		if wantTree then
-			plantTree(rng, hit.Position, forest)
+			-- A configured model always wins; the procedural tree is the
+			-- fallback for when no asset id has been supplied.
+			if not AssetLibrary.place("Trees", hit.Position, rng, forest) then
+				plantTree(rng, hit.Position, forest)
+			end
 			trees += 1
 		else
-			scatterClutter(rng, hit.Position, forest)
+			if not AssetLibrary.place("Clutter", hit.Position, rng, forest) then
+				scatterClutter(rng, hit.Position, forest)
+			end
 			clutter += 1
 		end
 

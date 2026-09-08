@@ -32,6 +32,7 @@ end
 print("[QZ] booting")
 
 local SurvivalService = require(need("SurvivalService"))
+local AssetLibrary = require(need("AssetLibrary"))
 local WorldService = require(need("WorldService"))
 local BuildingService = require(need("BuildingService"))
 local StructureService = require(need("StructureService"))
@@ -41,7 +42,10 @@ print("[QZ] modules loaded")
 -- Survival first: requiring it publishes the remotes the client waits on.
 step("SurvivalService", SurvivalService.start)
 
--- Then the world, then everything that needs terrain to stand on.
+-- Assets before the world, so the forest can use real models if any
+-- ids are configured.
+step("AssetLibrary", AssetLibrary.start)
+
 step("WorldService", WorldService.start)
 step("BuildingService", BuildingService.start)
 step("StructureService", StructureService.start)
