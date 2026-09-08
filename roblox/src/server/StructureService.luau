@@ -191,15 +191,33 @@ function StructureService.start()
 		return
 	end
 
-	local templates = {}
+	-- Toolbox items arrive as Models, but also as bare MeshParts, single
+	-- Parts, and Folders. Anything with geometry is usable, so anything that
+	-- is not already a Model gets wrapped in one rather than ignored.
+	local templates: { Model } = {}
+
 	for _, child in source:GetChildren() do
 		if child:IsA("Model") then
 			table.insert(templates, child)
+		elseif child:IsA("BasePart") or child:IsA("Folder") then
+			local wrapper = Instance.new("Model")
+			wrapper.Name = child.Name
+
+			local copy = child:Clone()
+			copy.Parent = wrapper
+
+			table.insert(templates, wrapper)
+			print(`[QZ] wrapped '{child.Name}' ({child.ClassName}) as a model`)
 		end
 	end
 
 	if #templates == 0 then
-		print(`[QZ] ServerStorage.{FOLDER_NAME} is empty - skipping structures`)
+		local found = #source:GetChildren()
+		if found == 0 then
+			print(`[QZ] ServerStorage.{FOLDER_NAME} is empty - drop a model into it`)
+		else
+			warn(`[QZ] ServerStorage.{FOLDER_NAME} holds {found} item(s), none usable as geometry`)
+		end
 		return
 	end
 
