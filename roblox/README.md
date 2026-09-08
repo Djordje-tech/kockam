@@ -63,9 +63,15 @@ the CLI: `rojo plugin install`.
 
 ```powershell
 git clone https://github.com/Djordje-tech/kockam.git
-cd kockam\roblox
+cd kockam
+git checkout claude/roblox-game-building-setup-486kk3
+cd roblox
 .\watch.ps1
 ```
+
+That `git checkout` matters: `git clone` leaves you on the repository's default
+branch, and this project lives on a feature branch. Skip it and the `roblox`
+folder does not exist yet.
 
 `watch.ps1` does two jobs at once: it runs `rojo serve`, and every 5 seconds it
 checks GitHub for new commits and fast-forwards your checkout. Leave it running

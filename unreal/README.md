@@ -46,8 +46,14 @@ lists the current exact set.
 
 ```powershell
 git clone https://github.com/Djordje-tech/kockam.git
-cd kockam\unreal
+cd kockam
+git checkout claude/roblox-game-building-setup-486kk3
+cd unreal
 ```
+
+That `git checkout` matters: `git clone` leaves you on the repository's default
+branch, and this project lives on a feature branch. Skip it and the `unreal`
+folder does not exist yet.
 
 Right-click **`Kockam.uproject`** → *Generate Visual Studio project files*.
 (First time it will ask which engine version — pick your installed 5.x.)
