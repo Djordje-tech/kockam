@@ -420,18 +420,27 @@ end
 
 --- Forest ----------------------------------------------------------------
 
+-- Low-chroma greens with real spread between them. A canopy made of one
+-- bright green is the tell that gives a Roblox forest away instantly.
 local CANOPY_GREENS = {
-	Color3.fromRGB(104, 158, 68),
-	Color3.fromRGB(126, 176, 76),
-	Color3.fromRGB(86, 140, 62),
-	Color3.fromRGB(142, 186, 88),
-	Color3.fromRGB(74, 124, 58),
+	Color3.fromRGB(72, 88, 54),
+	Color3.fromRGB(88, 100, 62),
+	Color3.fromRGB(60, 76, 48),
+	Color3.fromRGB(96, 106, 70),
+	Color3.fromRGB(52, 66, 44),
+	Color3.fromRGB(80, 92, 58),
 }
 
 local AUTUMN = {
-	Color3.fromRGB(214, 168, 62),
-	Color3.fromRGB(198, 134, 54),
-	Color3.fromRGB(224, 190, 84),
+	Color3.fromRGB(148, 118, 58),
+	Color3.fromRGB(132, 96, 48),
+	Color3.fromRGB(160, 134, 72),
+}
+
+local BARK = {
+	Color3.fromRGB(72, 62, 52),
+	Color3.fromRGB(60, 52, 44),
+	Color3.fromRGB(84, 72, 60),
 }
 
 -- Forest is a biome, not a scatter. Where this is high the woods are dense
@@ -449,47 +458,151 @@ local function ball(parent: Instance, position: Vector3, diameter: number, colou
 	blob.Size = Vector3.new(diameter, diameter * squash, diameter)
 	blob.Position = position
 	blob.Color = colour
-	blob.Material = Enum.Material.Grass
+	blob.Material = Enum.Material.LeafyGrass
 	blob.Parent = parent
 end
 
+-- Cylinders lie along X in Roblox, so every limb needs standing up before it
+-- can be pointed anywhere. This wraps that once.
+local function limb(parent: Instance, from: Vector3, to: Vector3, thickness: number, colour: Color3)
+	local delta = to - from
+	local length = delta.Magnitude
+	if length < 0.05 then
+		return
+	end
+
+	local part = Instance.new("Part")
+	part.Anchored = true
+	part.CanCollide = false
+	part.CanQuery = false
+	part.Shape = Enum.PartType.Cylinder
+	part.Size = Vector3.new(length, thickness, thickness)
+	part.CFrame = CFrame.lookAt((from + to) / 2, to) * CFrame.Angles(0, math.pi / 2, 0)
+	part.Color = colour
+	part.Material = Enum.Material.Wood
+	part.Parent = parent
+end
+
 local function plantTree(rng: Random, base: Vector3, parent: Instance)
-	local autumn = rng:NextNumber() < 0.12
+	local autumn = rng:NextNumber() < 0.1
 	local palette = if autumn then AUTUMN else CANOPY_GREENS
-	local tint = palette[rng:NextInteger(1, #palette)]
+	local bark = BARK[rng:NextInteger(1, #BARK)]
 
-	local tall = rng:NextNumber() < 0.34
-	local height = if tall then rng:NextNumber(38, 60) else rng:NextNumber(22, 36)
-	local trunkWidth = height * 0.085
+	local conifer = rng:NextNumber() < 0.42
+	local height = if conifer then rng:NextNumber(46, 78) else rng:NextNumber(28, 46)
+	local trunkWidth = height * 0.058
 
-	local trunk = Instance.new("Part")
-	trunk.Name = "Trunk"
-	trunk.Anchored = true
-	trunk.Shape = Enum.PartType.Cylinder
-	trunk.Size = Vector3.new(height, trunkWidth, trunkWidth)
-	-- A cylinder's length runs along X, so it has to be stood upright.
-	trunk.CFrame = CFrame.new(base + Vector3.new(0, height * 0.45, 0)) * CFrame.Angles(0, 0, math.pi / 2)
-	trunk.Color = Color3.fromRGB(92, 68, 48)
-	trunk.Material = Enum.Material.Wood
-	trunk.Parent = parent
+	-- A tapered trunk in two sections. Constant-width trunks are one of the
+	-- things that reads as "made of primitives" from a hundred studs away.
+	local midHeight = height * 0.55
+	limb(parent, base, base + Vector3.new(0, midHeight, 0), trunkWidth, bark)
+	limb(
+		parent,
+		base + Vector3.new(0, midHeight, 0),
+		base + Vector3.new(rng:NextNumber(-1.5, 1.5), height, rng:NextNumber(-1.5, 1.5)),
+		trunkWidth * 0.6,
+		bark
+	)
 
-	-- Overlapping blobs. The overlap is the whole trick: separate spheres read
-	-- as balls on a stick, merged ones read as a canopy.
-	local layers = rng:NextInteger(3, 4)
-	local spread = height * (if tall then 0.46 else 0.76)
+	if conifer then
+		-- Stacked, narrowing tiers: a spruce silhouette rather than a ball.
+		local tiers = rng:NextInteger(5, 7)
+		for tier = 1, tiers do
+			local t = (tier - 1) / (tiers - 1)
+			local y = height * (0.34 + t * 0.62)
+			local spread = height * 0.34 * (1 - t * 0.82)
 
-	for layer = 1, layers do
-		local t = (layer - 1) / layers
-		ball(
+			ball(
+				parent,
+				base + Vector3.new(rng:NextNumber(-1, 1), y, rng:NextNumber(-1, 1)),
+				spread * 2,
+				palette[rng:NextInteger(1, #palette)],
+				0.5
+			)
+		end
+		return
+	end
+
+	-- Broadleaf: real branches reaching out of the upper trunk, each ending
+	-- in its own clump. The clumps read as a canopy; the branches are what
+	-- stop it reading as a lollipop.
+	local branches = rng:NextInteger(4, 6)
+	for index = 1, branches do
+		local angle = (index / branches) * math.pi * 2 + rng:NextNumber(-0.4, 0.4)
+		local reach = height * rng:NextNumber(0.22, 0.36)
+		local from = base + Vector3.new(0, height * rng:NextNumber(0.5, 0.72), 0)
+		local to = from
+			+ Vector3.new(math.cos(angle) * reach, reach * rng:NextNumber(0.4, 0.8), math.sin(angle) * reach)
+
+		limb(parent, from, to, trunkWidth * 0.4, bark)
+		ball(parent, to, reach * rng:NextNumber(1.1, 1.5), palette[rng:NextInteger(1, #palette)], 0.78)
+	end
+
+	ball(
+		parent,
+		base + Vector3.new(0, height * 0.86, 0),
+		height * 0.44,
+		palette[rng:NextInteger(1, #palette)],
+		0.72
+	)
+end
+
+--- Ground cover ----------------------------------------------------------
+
+local ROCK_GREYS = {
+	Color3.fromRGB(96, 96, 92),
+	Color3.fromRGB(82, 84, 82),
+	Color3.fromRGB(110, 108, 102),
+}
+
+-- Undergrowth is what separates a forest from trees on a lawn: rocks, fallen
+-- timber, ferns and dead branches at ankle height, where the eye actually
+-- looks when it judges whether ground is real.
+local function scatterClutter(rng: Random, base: Vector3, parent: Instance)
+	local roll = rng:NextNumber()
+
+	if roll < 0.3 then
+		local size = rng:NextNumber(2.5, 7)
+		local rock = Instance.new("Part")
+		rock.Name = "Rock"
+		rock.Anchored = true
+		rock.Size = Vector3.new(size * rng:NextNumber(0.8, 1.6), size * 0.7, size * rng:NextNumber(0.8, 1.4))
+		rock.CFrame = CFrame.new(base + Vector3.new(0, size * 0.2, 0))
+			* CFrame.Angles(rng:NextNumber(-0.3, 0.3), rng:NextNumber(0, 6.28), rng:NextNumber(-0.3, 0.3))
+		rock.Color = ROCK_GREYS[rng:NextInteger(1, #ROCK_GREYS)]
+		rock.Material = Enum.Material.Rock
+		rock.Parent = parent
+	elseif roll < 0.46 then
+		-- Fallen trunk, lying where it dropped.
+		local length = rng:NextNumber(12, 26)
+		local angle = rng:NextNumber(0, 6.28)
+		limb(
 			parent,
-			base + Vector3.new(
-				rng:NextNumber(-spread, spread) * 0.15,
-				height * (0.64 + t * 0.32),
-				rng:NextNumber(-spread, spread) * 0.15
-			),
-			spread * (1 - t * 0.4),
-			tint:Lerp(Color3.new(1, 1, 1), t * 0.15),
-			if tall then 1.2 else 0.82
+			base + Vector3.new(0, 1.2, 0),
+			base + Vector3.new(math.cos(angle) * length, rng:NextNumber(0.6, 2.2), math.sin(angle) * length),
+			rng:NextNumber(1.8, 3.2),
+			BARK[rng:NextInteger(1, #BARK)]
+		)
+	elseif roll < 0.84 then
+		-- Fern clumps, two or three low blobs together.
+		local tint = CANOPY_GREENS[rng:NextInteger(1, #CANOPY_GREENS)]
+		for _ = 1, rng:NextInteger(2, 3) do
+			ball(
+				parent,
+				base + Vector3.new(rng:NextNumber(-2.5, 2.5), rng:NextNumber(0.6, 1.4), rng:NextNumber(-2.5, 2.5)),
+				rng:NextNumber(2.6, 5),
+				tint,
+				0.42
+			)
+		end
+	else
+		local angle = rng:NextNumber(0, 6.28)
+		limb(
+			parent,
+			base + Vector3.new(0, 0.5, 0),
+			base + Vector3.new(math.cos(angle) * rng:NextNumber(3, 7), rng:NextNumber(0.4, 1.4), math.sin(angle) * rng:NextNumber(3, 7)),
+			rng:NextNumber(0.4, 0.8),
+			BARK[rng:NextInteger(1, #BARK)]
 		)
 	end
 end
@@ -505,18 +618,24 @@ local function buildForest()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = { forest }
 
-	local trees = 0
+	local trees, clutter = 0, 0
 	local attempts = 0
 
-	while trees < 3200 and attempts < 42000 do
+	while (trees < 1500 or clutter < 2400) and attempts < 60000 do
 		attempts += 1
 
 		local x = rng:NextNumber(-HALF + 80, HALF - 80)
 		local z = rng:NextNumber(-HALF + 80, HALF - 80)
 
+		local density = forestDensity(x, z)
+
 		-- Biome first: it is the cheapest test, and it rejects most of the
-		-- map before any raycast is spent on it.
-		if rng:NextNumber() > forestDensity(x, z) then
+		-- map before a raycast is spent on it. Clutter tolerates thinner
+		-- woodland than trees do, so it gets a softer threshold.
+		local wantTree = trees < 1500 and rng:NextNumber() < density
+		local wantClutter = clutter < 2400 and rng:NextNumber() < density * 0.8 + 0.12
+
+		if not wantTree and not wantClutter then
 			continue
 		end
 
@@ -530,7 +649,7 @@ local function buildForest()
 		end
 
 		-- Only on soil. Asphalt, slate, rock, sand and snow all reject, which
-		-- is why roads stay clear without anything having to know about them.
+		-- is why roads stay clear without anything knowing they exist.
 		local material = hit.Material
 		if material ~= Enum.Material.Grass and material ~= Enum.Material.Ground then
 			continue
@@ -539,15 +658,20 @@ local function buildForest()
 			continue
 		end
 
-		plantTree(rng, hit.Position, forest)
-		trees += 1
+		if wantTree then
+			plantTree(rng, hit.Position, forest)
+			trees += 1
+		else
+			scatterClutter(rng, hit.Position, forest)
+			clutter += 1
+		end
 
-		if trees % 200 == 0 then
+		if (trees + clutter) % 250 == 0 then
 			task.wait()
 		end
 	end
 
-	print(`[QZ] forest: {trees} trees from {attempts} attempts`)
+	print(`[QZ] forest: {trees} trees, {clutter} ground cover, {attempts} attempts`)
 end
 
 --- Look ------------------------------------------------------------------
@@ -563,20 +687,22 @@ local function applyLighting()
 	guard("lighting properties", function()
 		-- Technology is not assignable from a script; it is set in
 		-- default.project.json instead.
-		Lighting.Brightness = 3
-		Lighting.ClockTime = 15
+		Lighting.Brightness = 2.4
+		-- Overcast-hour sun. Harsh midday light flattens everything and is
+		-- the single most Roblox-looking thing a scene can do.
+		Lighting.ClockTime = 16.4
 		Lighting.GeographicLatitude = 8
 		Lighting.ExposureCompensation = 0.25
 
-		Lighting.Ambient = Color3.fromRGB(40, 46, 58)
-		Lighting.OutdoorAmbient = Color3.fromRGB(126, 140, 162)
+		Lighting.Ambient = Color3.fromRGB(44, 48, 50)
+		Lighting.OutdoorAmbient = Color3.fromRGB(118, 126, 126)
 		Lighting.EnvironmentDiffuseScale = 1
 		Lighting.EnvironmentSpecularScale = 1
 
 		-- Warm on the lit faces, cool in the shade: most of what separates a
 		-- scene that looks lit from one that looks flat.
-		Lighting.ColorShift_Top = Color3.fromRGB(56, 42, 18)
-		Lighting.ColorShift_Bottom = Color3.fromRGB(14, 22, 38)
+		Lighting.ColorShift_Top = Color3.fromRGB(42, 36, 22)
+		Lighting.ColorShift_Bottom = Color3.fromRGB(18, 24, 26)
 		Lighting.ShadowSoftness = 0.2
 	end)
 end
@@ -590,14 +716,14 @@ local function applyEffects()
 
 	guard("atmosphere", function()
 		local atmosphere = Instance.new("Atmosphere")
-		atmosphere.Density = 0.32
-		atmosphere.Offset = 0.3
-		atmosphere.Color = Color3.fromRGB(212, 222, 236)
-		atmosphere.Decay = Color3.fromRGB(112, 148, 190)
-		atmosphere.Glare = 0.15
+		atmosphere.Density = 0.42
+		atmosphere.Offset = 0.4
+		atmosphere.Color = Color3.fromRGB(196, 202, 200)
+		atmosphere.Decay = Color3.fromRGB(104, 118, 116)
+		atmosphere.Glare = 0.1
 		-- Aerial perspective across a map this wide: distant ranges need to
 		-- sit behind near ones without the whole view turning to soup.
-		atmosphere.Haze = 1.6
+		atmosphere.Haze = 2.4
 		atmosphere.Parent = Lighting
 	end)
 
@@ -611,7 +737,7 @@ local function applyEffects()
 
 	guard("post stack", function()
 		local bloom = Instance.new("BloomEffect")
-		bloom.Intensity = 0.5
+		bloom.Intensity = 0.28
 		bloom.Size = 26
 		bloom.Threshold = 1.55
 		bloom.Parent = Lighting
@@ -622,9 +748,12 @@ local function applyEffects()
 		sunRays.Parent = Lighting
 
 		local colour = Instance.new("ColorCorrectionEffect")
-		colour.Contrast = 0.16
-		colour.Saturation = 0.16
-		colour.TintColor = Color3.fromRGB(255, 250, 240)
+		-- Desaturated and cool. Photoreal post-apocalyptic grading pulls
+		-- colour *out* of a frame; the saturated version this replaced was
+		-- reading as a cartoon no matter what the geometry did.
+		colour.Contrast = 0.22
+		colour.Saturation = -0.28
+		colour.TintColor = Color3.fromRGB(232, 238, 234)
 		colour.Parent = Lighting
 
 		local depth = Instance.new("DepthOfFieldEffect")
@@ -640,8 +769,8 @@ local function applyTerrainLook()
 	local terrain = Workspace.Terrain
 
 	guard("water", function()
-		terrain.WaterColor = Color3.fromRGB(42, 122, 148)
-		terrain.WaterTransparency = 0.78
+		terrain.WaterColor = Color3.fromRGB(48, 74, 74)
+		terrain.WaterTransparency = 0.7
 		terrain.WaterReflectance = 0.55
 		terrain.WaterWaveSize = 0.09
 		terrain.WaterWaveSpeed = 12
@@ -652,13 +781,15 @@ local function applyTerrainLook()
 	end)
 
 	guard("material colours", function()
-		terrain:SetMaterialColor(Enum.Material.Grass, Color3.fromRGB(112, 158, 72))
-		terrain:SetMaterialColor(Enum.Material.Ground, Color3.fromRGB(122, 100, 72))
-		terrain:SetMaterialColor(Enum.Material.Rock, Color3.fromRGB(118, 116, 112))
-		terrain:SetMaterialColor(Enum.Material.Slate, Color3.fromRGB(92, 92, 96))
-		terrain:SetMaterialColor(Enum.Material.Asphalt, Color3.fromRGB(72, 72, 74))
-		terrain:SetMaterialColor(Enum.Material.Sand, Color3.fromRGB(210, 194, 154))
-		terrain:SetMaterialColor(Enum.Material.Snow, Color3.fromRGB(240, 244, 250))
+		-- Real ground is grey-green and low-chroma. Roblox's defaults are
+		-- vivid because they have to read on a phone at 20 metres.
+		terrain:SetMaterialColor(Enum.Material.Grass, Color3.fromRGB(94, 108, 68))
+		terrain:SetMaterialColor(Enum.Material.Ground, Color3.fromRGB(98, 90, 74))
+		terrain:SetMaterialColor(Enum.Material.Rock, Color3.fromRGB(108, 108, 104))
+		terrain:SetMaterialColor(Enum.Material.Slate, Color3.fromRGB(88, 90, 90))
+		terrain:SetMaterialColor(Enum.Material.Asphalt, Color3.fromRGB(64, 64, 64))
+		terrain:SetMaterialColor(Enum.Material.Sand, Color3.fromRGB(168, 158, 132))
+		terrain:SetMaterialColor(Enum.Material.Snow, Color3.fromRGB(226, 230, 232))
 	end)
 
 	guard("clouds", function()
@@ -668,8 +799,8 @@ local function applyTerrainLook()
 		end
 
 		local clouds = Instance.new("Clouds")
-		clouds.Cover = 0.55
-		clouds.Density = 0.6
+		clouds.Cover = 0.74
+		clouds.Density = 0.75
 		clouds.Color = Color3.fromRGB(255, 254, 250)
 		clouds.Parent = terrain
 	end)

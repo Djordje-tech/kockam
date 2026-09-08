@@ -397,6 +397,45 @@ local function generate(kind: Buildings.BuildingKind, base: Vector3, rng: Random
 		Enum.Material.Concrete
 	)
 
+	-- Overgrowth and rubble. A building with clean edges reads as a prop; the
+	-- mess at its feet is most of what sells it as abandoned.
+	local footprint = kind.Footprint
+	for _ = 1, 14 do
+		local angle = rng:NextNumber(0, math.pi * 2)
+		local radius = math.max(footprint.X, footprint.Y) * rng:NextNumber(0.45, 0.72)
+		local at = base + Vector3.new(math.cos(angle) * radius, 0, math.sin(angle) * radius)
+
+		local chunk = Instance.new("Part")
+		chunk.Name = "Rubble"
+		chunk.Anchored = true
+		chunk.CanCollide = false
+		chunk.Size = Vector3.new(rng:NextNumber(2, 7), rng:NextNumber(0.6, 2.4), rng:NextNumber(2, 7))
+		chunk.CFrame = CFrame.new(at + Vector3.new(0, 0.6, 0))
+			* CFrame.Angles(rng:NextNumber(-0.2, 0.2), rng:NextNumber(0, 6.28), rng:NextNumber(-0.2, 0.2))
+		chunk.Color = kind.FloorColor:Lerp(Color3.fromRGB(70, 68, 64), rng:NextNumber(0.3, 0.8))
+		chunk.Material = Enum.Material.Concrete
+		chunk.Parent = model
+	end
+
+	for _ = 1, 10 do
+		local angle = rng:NextNumber(0, math.pi * 2)
+		local radius = math.max(footprint.X, footprint.Y) * rng:NextNumber(0.4, 0.6)
+
+		local moss = Instance.new("Part")
+		moss.Name = "Overgrowth"
+		moss.Anchored = true
+		moss.CanCollide = false
+		moss.CanQuery = false
+		moss.Shape = Enum.PartType.Ball
+		local size = rng:NextNumber(4, 11)
+		moss.Size = Vector3.new(size, size * 0.5, size)
+		moss.Position = base
+			+ Vector3.new(math.cos(angle) * radius, rng:NextNumber(0, kind.Floors * kind.FloorHeight * 0.5), math.sin(angle) * radius)
+		moss.Color = Color3.fromRGB(64, 78, 52):Lerp(Color3.fromRGB(88, 96, 62), rng:NextNumber())
+		moss.Material = Enum.Material.LeafyGrass
+		moss.Parent = model
+	end
+
 	model:SetAttribute("Kind", kind.Name)
 	model:SetAttribute("LootCategory", kind.RoomCategory)
 	CollectionService:AddTag(model, "Building")
@@ -506,7 +545,45 @@ function BuildingService.start()
 
 	local built = 0
 
-	for _ = 1, BUILDING_COUNT do
+	-- A town: two rows facing a street, which is both how towns actually look
+	-- and the only way a player finds a building on a map this size.
+	local townCentre = findSite(Buildings.Kinds.Supermarket, { parent }, rng)
+	if townCentre then
+		local street = 46
+		local cursor = -220
+
+		for _ = 1, 10 do
+			local kind = pool[rng:NextInteger(1, #pool)]
+			local side = if built % 2 == 0 then 1 else -1
+
+			local at = townCentre
+				+ Vector3.new(cursor, 0, side * (street / 2 + kind.Footprint.Y / 2))
+
+			-- Follow the ground rather than assuming the town sits on a
+			-- table; the pad under each building absorbs the rest.
+			local hit = groundAt(at.X, at.Z, { parent })
+			if hit then
+				local site = Vector3.new(at.X, hit.Position.Y, at.Z)
+				levelGround(site, kind.Footprint, kind.Floors * kind.FloorHeight)
+
+				local model = generate(kind, site, rng)
+				model:SetAttribute("Settlement", "Town")
+				model.Parent = parent
+
+				built += 1
+				if side == -1 then
+					cursor += kind.Footprint.X + 18
+				end
+			end
+
+			task.wait()
+		end
+
+		print(`[QZ] town centred at {math.floor(townCentre.X)}, {math.floor(townCentre.Z)}`)
+	end
+
+	-- The rest are outliers: farms, lone houses, an outpost in the hills.
+	for _ = 1, BUILDING_COUNT - built do
 		local kind = pool[rng:NextInteger(1, #pool)]
 
 		local site = findSite(kind, { parent }, rng)
