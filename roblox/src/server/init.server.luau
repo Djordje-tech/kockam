@@ -36,6 +36,7 @@ local AssetLibrary = require(need("AssetLibrary"))
 local WorldService = require(need("WorldService"))
 local BuildingService = require(need("BuildingService"))
 local StructureService = require(need("StructureService"))
+local VehicleService = require(need("VehicleService"))
 
 print("[QZ] modules loaded")
 
@@ -49,5 +50,8 @@ step("AssetLibrary", AssetLibrary.start)
 step("WorldService", WorldService.start)
 step("BuildingService", BuildingService.start)
 step("StructureService", StructureService.start)
+
+-- Last: vehicles look for asphalt, so the roads have to exist first.
+step("VehicleService", VehicleService.start)
 
 print("[QZ] server up")

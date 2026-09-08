@@ -21,6 +21,10 @@ Assets.Categories = {
 
 	-- Whole buildings, placed the same way the generated ones are.
 	Buildings = {} :: { number },
+
+	-- Car bodies. These get rigged with wheels, a seat and an engine, so any
+	-- model roughly the shape of a vehicle becomes drivable.
+	Vehicles = {} :: { number },
 }
 
 -- How much to scale loaded models, per category. Creator Store assets come in
@@ -29,6 +33,7 @@ Assets.Scale = {
 	Trees = 1,
 	Clutter = 1,
 	Buildings = 1,
+	Vehicles = 1,
 }
 
 function Assets.has(category: string): boolean

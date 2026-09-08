@@ -8,15 +8,23 @@ local Net = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Net")
 
 local HUD = require(script:WaitForChild("HUD"))
 local VitalsHUD = require(script:WaitForChild("VitalsHUD"))
+local VehicleHUD = require(script:WaitForChild("VehicleHUD"))
 
 HUD.build()
 VitalsHUD.build()
+VehicleHUD.build()
+VehicleHUD.start()
 
 local vitalsSync = Net.waitForEvent("VitalsSync")
 local sprintRequest = Net.waitForEvent("SprintRequest")
+local vehicleSync = Net.waitForEvent("VehicleSync")
 
 vitalsSync.OnClientEvent:Connect(function(vitals)
 	VitalsHUD.update(vitals)
+end)
+
+vehicleSync.OnClientEvent:Connect(function(state)
+	VehicleHUD.update(state)
 end)
 
 -- Sprint is a request, not a command. The server decides whether the body can
