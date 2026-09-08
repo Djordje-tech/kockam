@@ -1,16 +1,21 @@
 --!strict
--- One palette, so every panel we add later already matches.
+-- One palette for the whole interface. Concrete, rust and sodium light — the
+-- game is set in a quarantined city, and the UI should feel like it was
+-- printed on something found there.
 
 return {
-	Background = Color3.fromRGB(18, 20, 28),
-	Panel = Color3.fromRGB(28, 31, 42),
-	PanelStroke = Color3.fromRGB(60, 66, 86),
-	Text = Color3.fromRGB(236, 239, 247),
-	Muted = Color3.fromRGB(150, 158, 180),
-	Accent = Color3.fromRGB(255, 200, 60),
-	Positive = Color3.fromRGB(88, 214, 141),
-	Negative = Color3.fromRGB(232, 106, 106),
-	Corner = UDim.new(0, 10),
+	Panel = Color3.fromRGB(24, 24, 26),
+	PanelEdge = Color3.fromRGB(58, 56, 52),
+	Sunk = Color3.fromRGB(16, 16, 18),
+
+	Text = Color3.fromRGB(228, 226, 220),
+	Muted = Color3.fromRGB(148, 144, 136),
+
+	Amber = Color3.fromRGB(226, 168, 62),
+	Good = Color3.fromRGB(130, 206, 140),
+	Bad = Color3.fromRGB(214, 96, 92),
+
+	Corner = UDim.new(0, 6),
 	Font = Enum.Font.GothamBold,
-	BodyFont = Enum.Font.Gotham,
+	Body = Enum.Font.Gotham,
 }

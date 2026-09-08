@@ -1,56 +1,51 @@
 --!strict
--- Every tunable number in the game lives here. Balancing happens in this file
--- and nowhere else, so a tuning pass never means touching gameplay code.
+-- Every tunable number in Quarantine Zone lives here. Balancing is a pass over
+-- this file and nothing else.
 
-export type UpgradeDef = {
-	DisplayName: string,
-	BaseCost: number,
-	CostGrowth: number,
-	MaxLevel: number,
-	EffectPerLevel: number,
+export type GeneratorTier = {
+	Name: string,
+	Cost: number,          -- supplies to reach this tier from the one below
+	Rate: number,          -- supplies per minute
+	Color: Color3,
+	Height: number,        -- stud height of the pedestal model
 }
 
--- Cost grows geometrically so the curve keeps its shape no matter how many
--- levels we add later.
-local upgrades: { [string]: UpgradeDef } = {
-	Multiplier = {
-		DisplayName = "Coin Multiplier",
-		BaseCost = 50,
-		CostGrowth = 1.6,
-		MaxLevel = 25,
-		-- Level 0 pays 1x; each level adds 25%.
-		EffectPerLevel = 0.25,
-	},
-	Magnet = {
-		DisplayName = "Coin Magnet",
-		BaseCost = 120,
-		CostGrowth = 1.8,
-		MaxLevel = 10,
-		-- Studs of pickup range added per level.
-		EffectPerLevel = 4,
-	},
-}
-
--- Passes are wired up but left at 0 until real asset ids exist. A 0 id means
--- "not configured" everywhere, so the game runs fine before any pass exists.
-local gamePasses: { [string]: number } = {
-	DoubleCoins = 0,
+-- Tier 0 is an empty slot. Buying tier 1 costs Tiers[1].Cost, and so on, so a
+-- slot's total investment is the sum of every tier up to its level.
+local tiers: { GeneratorTier } = {
+	{ Name = "Scrap Pile",   Cost = 0,     Rate = 1,   Color = Color3.fromRGB(122, 118, 108), Height = 1.2 },
+	{ Name = "Water Filter", Cost = 120,   Rate = 4,   Color = Color3.fromRGB(86, 132, 148),  Height = 2.0 },
+	{ Name = "Ration Crate", Cost = 600,   Rate = 14,  Color = Color3.fromRGB(140, 118, 74),  Height = 2.6 },
+	{ Name = "Generator",    Cost = 2800,  Rate = 46,  Color = Color3.fromRGB(168, 122, 52),  Height = 3.2 },
+	{ Name = "Greenhouse",   Cost = 12000, Rate = 150, Color = Color3.fromRGB(92, 138, 82),   Height = 3.8 },
 }
 
 local Config = {
-	-- How many coin orbs are alive at once, and how far they scatter.
-	CoinCount = 25,
-	CoinSpawnRadius = 120,
-	CoinValue = 1,
-	CoinRespawnDelay = 1.5,
+	--- Shelter ---------------------------------------------------------------
+	SlotCount = 6,
+	Tiers = tiers,
 
-	Upgrades = upgrades,
+	--- Offline generation ----------------------------------------------------
+	-- The cap is the retention mechanic: supplies stop accruing once the
+	-- shelter is full, so the only way not to waste production is to come
+	-- back. It is also the natural thing to sell more of later.
+	OfflineCapMinutes = 8 * 60,
+	-- Anything under this is not worth interrupting the player with.
+	OfflineReportThreshold = 5,
 
-	GamePasses = gamePasses,
-	DoubleCoinsMultiplier = 2,
+	--- World -----------------------------------------------------------------
+	PlotSize = Vector3.new(48, 1, 48),
+	PlotSpacing = 64,
+	PlotCount = 6,
+	PlotOrigin = Vector3.new(0, 0, 0),
 
-	-- DataStore. Bump DataVersion whenever the saved shape changes.
-	DataStoreName = "PlayerData",
+	--- Loop timing -----------------------------------------------------------
+	-- How often live production is credited. Slower than a heartbeat on
+	-- purpose: this is bookkeeping, not gameplay.
+	TickInterval = 1,
+
+	--- Persistence -----------------------------------------------------------
+	DataStoreName = "QuarantineZone_v1",
 	DataVersion = 1,
 	AutosaveInterval = 120,
 }

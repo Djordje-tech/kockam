@@ -1,5 +1,5 @@
 {
-  "name": "kockam",
+  "name": "quarantine-zone",
   "tree": {
     "$className": "DataModel",
 
@@ -27,23 +27,19 @@
       }
     },
 
-    "Workspace": {
-      "$className": "Workspace",
-      "$properties": {
-        "Gravity": 196.2
-      }
-    },
-
     "Lighting": {
       "$className": "Lighting",
       "$properties": {
         "Technology": "Future",
-        "Brightness": 2,
-        "ClockTime": 15,
-        "Ambient": [0.15, 0.15, 0.2],
-        "OutdoorAmbient": [0.35, 0.35, 0.45],
-        "EnvironmentDiffuseScale": 0.6,
-        "EnvironmentSpecularScale": 0.4
+        "Brightness": 1.4,
+        "ClockTime": 16.5,
+        "Ambient": [0.09, 0.09, 0.1],
+        "OutdoorAmbient": [0.28, 0.28, 0.3],
+        "EnvironmentDiffuseScale": 0.45,
+        "EnvironmentSpecularScale": 0.3,
+        "FogColor": [0.42, 0.43, 0.44],
+        "FogStart": 60,
+        "FogEnd": 700
       }
     }
   }
