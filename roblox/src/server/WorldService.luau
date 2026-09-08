@@ -178,7 +178,7 @@ local function writeChunk(originX: number, originZ: number)
 	end
 
 	local ok, err = pcall(function()
-		Workspace.Terrain:WriteVoxels(region, RES, materials, occupancies)
+			Workspace.Terrain:WriteVoxels(region, RES, materials, occupancies)
 	end)
 
 	if not ok then
@@ -315,7 +315,13 @@ end
 --- Look ------------------------------------------------------------------
 
 local function applyLighting()
-	Lighting.Technology = Enum.Technology.Future
+	-- Grouped in a pcall on purpose: engine properties change scriptability
+	-- between releases, and losing the whole world to one rejected assignment
+	-- is not a trade worth making for a colour tweak.
+	local ok, err = pcall(function()
+	-- Lighting.Technology is deliberately absent: it is not assignable from a
+	-- script, and setting it here threw before any terrain was written. It is
+	-- set in default.project.json instead.
 	Lighting.Brightness = 2.6
 	Lighting.ClockTime = 14
 	Lighting.GeographicLatitude = 0
@@ -331,6 +337,11 @@ local function applyLighting()
 	Workspace.Terrain.WaterReflectance = 0.55
 	Workspace.Terrain.WaterWaveSize = 0.12
 	Workspace.Terrain.WaterWaveSpeed = 8
+	end)
+
+	if not ok then
+		warn(`[WorldService] some lighting properties were rejected: {err}`)
+	end
 
 	-- Rebuild the effect stack from scratch so re-running is idempotent.
 	for _, existing in Lighting:GetChildren() do
