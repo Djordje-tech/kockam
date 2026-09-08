@@ -37,7 +37,7 @@ local Config = {
 	PlotSize = Vector3.new(48, 1, 48),
 	PlotSpacing = 64,
 	PlotCount = 6,
-	PlotOrigin = Vector3.new(0, 0, 0),
+	PlotOrigin = Vector3.new(0, 24, 0),
 
 	--- Loop timing -----------------------------------------------------------
 	-- How often live production is credited. Slower than a heartbeat on
