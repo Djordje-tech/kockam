@@ -1,0 +1,7 @@
+# Rokit pins the exact tool versions this project builds with.
+# Install Rokit once (https://github.com/rojo-rbx/rokit), then run `rokit install`
+# inside this folder and every tool below lands on your PATH.
+
+[tools]
+rojo = "rojo-rbx/rojo@7.4.4"
+stylua = "JohnnyMorganz/StyLua@2.0.2"

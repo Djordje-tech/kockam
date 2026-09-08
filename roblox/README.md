@@ -1,0 +1,134 @@
+# Roblox game — live build setup
+
+This folder is a Roblox place kept entirely as source files. I edit the files
+here and push; your machine pulls them and pipes them straight into Roblox
+Studio, live. You watch the game change in front of you and playtest it
+whenever you like.
+
+The piece that makes it live is **Rojo** — a tool that serves this folder to a
+Studio plugin over localhost. Save a file, Studio updates. No manual importing,
+no copy-pasting scripts.
+
+```
+me (cloud)  --push-->  GitHub  --pull-->  your PC  --rojo-->  Roblox Studio
+                                             ^                      |
+                                             +----- watch loop ------+
+```
+
+## One-time setup (about 10 minutes)
+
+### 1. Install Roblox Studio
+<https://create.roblox.com/> → Download Studio. Sign in with your Roblox
+account.
+
+### 2. Install Rojo (the CLI)
+
+Simplest route — grab the binary:
+
+1. Open <https://github.com/rojo-rbx/rojo/releases> and download the latest
+   `rojo-*-windows-x86_64.zip` (or the macOS build).
+2. Unzip it and put `rojo.exe` somewhere on your PATH — e.g. create
+   `C:\Tools`, drop it in, then add `C:\Tools` to PATH under
+   *Settings → System → About → Advanced system settings → Environment
+   Variables*.
+3. Open a **new** terminal and check:
+
+```powershell
+rojo --version
+```
+
+Prefer a version manager? `rokit.toml` in this folder already pins the exact
+versions this project expects. Install **Rokit** from
+<https://github.com/rojo-rbx/rokit/releases>, run `rokit self-install` once,
+then `rokit install` inside this folder and both `rojo` and `stylua` land on
+your PATH at the pinned versions.
+
+### 3. Install the Rojo Studio plugin
+
+In Studio: **Toolbox → Plugins → search "Rojo"** (by Rojo), install it. Or from
+the CLI: `rojo plugin install`.
+
+### 4. Clone the repo and start the watcher
+
+```powershell
+git clone https://github.com/Djordje-tech/kockam.git
+cd kockam\roblox
+.\watch.ps1
+```
+
+`watch.ps1` does two jobs at once: it runs `rojo serve`, and every 5 seconds it
+checks GitHub for new commits and fast-forwards your checkout. Leave it running
+in its own terminal window for the whole session.
+
+On macOS or Linux the equivalent is `./watch.sh`.
+
+### 5. Connect Studio
+
+1. In Studio: **File → New → Baseplate** (a fresh place with ground in it).
+2. Open the **Rojo** plugin tab → **Connect** → it finds `localhost:34872`.
+3. Everything under `src/` appears in the Explorer. Press **Play**.
+
+You should see a coin counter at the top, an upgrades panel bottom-left, and
+gold coins scattered across the baseplate. Walk into one — the counter ticks up.
+
+**That's the pipeline working.** From then on, every time I push, your Studio
+updates within about five seconds, live, while it's open.
+
+### 6. Turn on saving (optional, do it once)
+
+Progress only persists if DataStores are enabled:
+**Game Settings → Security → Enable Studio Access to API Services → Save.**
+Without it the game runs fine, you just start at 0 coins each session.
+
+## Publishing it
+
+**File → Publish to Roblox As…**, fill in a name, done — it's live and
+playable at a real URL. After the first publish, `File → Publish to Roblox`
+(no dialog) pushes updates in one click.
+
+Only publish when you want to; nothing here touches your Roblox account on its
+own. I have no access to Studio or to your account — I only write files.
+
+## What's in here
+
+```
+default.project.json    how files map onto Roblox instances
+rokit.toml              pinned tool versions
+watch.ps1 / watch.sh    the live-sync loop you leave running
+src/
+  shared/               code both sides need
+    Config.luau         every tunable number in the game
+    Net.luau            RemoteEvent plumbing
+    Upgrades.luau       cost curve + upgrade effects
+  server/               authoritative game logic
+    init.server.luau    entry point
+    DataService.luau    saving, loading, leaderstats
+    CoinService.luau    spawns coins, pays players
+    ShopService.luau    validates upgrade purchases
+    PassService.luau    game pass ownership
+  client/               UI and local effects only
+    init.client.luau    entry point
+    HUD.luau            coin counter, shop panel, popups
+    Theme.luau          colours and fonts in one place
+    CoinSpin.luau       local coin rotation
+```
+
+Two rules the code sticks to, because they are what separates a game that
+survives contact with real players from one that doesn't:
+
+- **The server decides everything that touches money.** The client sends "I
+  want to buy the multiplier"; the server checks the balance and the price. An
+  exploiter can fake any message they like and still not mint a coin.
+- **Balance lives in `Config.luau`.** Changing how the game feels is a
+  number-tuning pass, never a code rewrite.
+
+## What this starter is
+
+A working core loop — collect, spend, upgrade, repeat — with saving, a shop,
+and monetisation hooks already wired in. It is deliberately generic: it's the
+skeleton, and the actual game gets built on top of it once you tell me what
+you want.
+
+To make it a real game we swap the theme and the verb: coins become whatever
+you're collecting, the baseplate becomes a real map, and the upgrade panel
+becomes your progression. Say the word and I'll build it.
