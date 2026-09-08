@@ -71,6 +71,46 @@ local function loadOne(assetId: number, scale: number): Model?
 	return normalise(model, scale)
 end
 
+-- Models dropped straight into ServerStorage are the lowest-friction way to
+-- get real geometry in: an imported model has no asset id until it is
+-- published, so requiring one would mean an extra publish step for nothing.
+-- A folder named after the category is enough.
+local function adoptFromStorage(category: string, scale: number): { Model }
+	local list = {}
+
+	local folder = ServerStorage:FindFirstChild(category)
+	if not folder then
+		return list
+	end
+
+	for _, child in folder:GetChildren() do
+		local model: Model? = nil
+
+		if child:IsA("Model") then
+			model = child:Clone()
+		elseif child:IsA("BasePart") then
+			-- A single imported MeshPart is common and perfectly usable; it
+			-- just needs wrapping so everything downstream sees a Model.
+			local wrapper = Instance.new("Model")
+			wrapper.Name = child.Name
+			local copy = child:Clone()
+			copy.Parent = wrapper
+			wrapper.PrimaryPart = copy
+			model = wrapper
+		end
+
+		if model then
+			table.insert(list, normalise(model, scale))
+		end
+	end
+
+	if #list > 0 then
+		print(`[QZ] {category}: adopted {#list} model(s) from ServerStorage.{category}`)
+	end
+
+	return list
+end
+
 function AssetLibrary.start()
 	cache = Instance.new("Folder")
 	cache.Name = "AssetCache"
@@ -79,8 +119,14 @@ function AssetLibrary.start()
 	local loaded, failed = 0, 0
 
 	for category, ids in Assets.Categories do
-		local list = {}
 		local scale = Assets.Scale[category] or 1
+
+		-- Hand-placed models first, then anything named by asset id.
+		local list = adoptFromStorage(category, scale)
+		for _, model in list do
+			model.Parent = cache
+			loaded += 1
+		end
 
 		for _, assetId in ids do
 			local model = loadOne(assetId, scale)
@@ -97,7 +143,8 @@ function AssetLibrary.start()
 	end
 
 	if loaded == 0 and failed == 0 then
-		print("[QZ] no asset ids configured - using procedural models")
+		print("[QZ] no models supplied - using procedural ones")
+		print("[QZ] drop models into ServerStorage.Trees / Clutter / Buildings / Vehicles to replace them")
 	else
 		print(`[QZ] assets: {loaded} loaded, {failed} failed`)
 	end

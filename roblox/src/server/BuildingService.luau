@@ -14,7 +14,10 @@ local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
 
+local ServerScriptService = game:GetService("ServerScriptService")
+
 local Buildings = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Buildings"))
+local AssetLibrary = require(ServerScriptService:WaitForChild("Server"):WaitForChild("AssetLibrary"))
 
 local BuildingService = {}
 
@@ -582,7 +585,8 @@ function BuildingService.start()
 		print(`[QZ] town centred at {math.floor(townCentre.X)}, {math.floor(townCentre.Z)}`)
 	end
 
-	-- The rest are outliers: farms, lone houses, an outpost in the hills.
+	-- The rest are outliers: farms, lone houses, an outpost in the hills. A
+	-- supplied model wins over the generated one wherever there is a site.
 	for _ = 1, BUILDING_COUNT - built do
 		local kind = pool[rng:NextInteger(1, #pool)]
 
@@ -590,8 +594,10 @@ function BuildingService.start()
 		if site then
 			levelGround(site, kind.Footprint, kind.Floors * kind.FloorHeight)
 
-			local model = generate(kind, site, rng)
-			model.Parent = parent
+			if not AssetLibrary.place("Buildings", site, rng, parent) then
+				local model = generate(kind, site, rng)
+				model.Parent = parent
+			end
 
 			built += 1
 		end
