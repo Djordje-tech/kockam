@@ -36,6 +36,7 @@ local PlotService = require(need("PlotService"))
 local ShelterService = require(need("ShelterService"))
 local WorldService = require(need("WorldService"))
 local StructureService = require(need("StructureService"))
+local SurvivalService = require(need("SurvivalService"))
 
 print("[QZ] modules loaded")
 
@@ -43,6 +44,7 @@ print("[QZ] modules loaded")
 step("DataService", DataService.start)
 step("PlotService", PlotService.start)
 step("ShelterService", ShelterService.start)
+step("SurvivalService", SurvivalService.start)
 
 -- World last. It is the slow one, and nothing else depends on it existing.
 step("WorldService", WorldService.start)
