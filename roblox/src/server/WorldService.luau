@@ -107,9 +107,12 @@ local function writeChunk(originX: number, originZ: number)
 	local size = region.Size
 	local corner = region.CFrame.Position - size / 2
 
-	local nx = math.floor(size.X / RES)
-	local ny = math.floor(size.Y / RES)
-	local nz = math.floor(size.Z / RES)
+	-- round, not floor: a region size that lands a hair under a multiple of
+	-- RES would truncate here and hand WriteVoxels arrays one column short,
+	-- which it rejects outright.
+	local nx = math.round(size.X / RES)
+	local ny = math.round(size.Y / RES)
+	local nz = math.round(size.Z / RES)
 
 	-- Height is per column, so it is sampled once per (x, z) instead of once
 	-- per voxel. That is the difference between seconds and minutes.
@@ -174,23 +177,36 @@ local function writeChunk(originX: number, originZ: number)
 		occupancies[ix] = occColumn
 	end
 
-	Workspace.Terrain:WriteVoxels(region, RES, materials, occupancies)
+	local ok, err = pcall(function()
+		Workspace.Terrain:WriteVoxels(region, RES, materials, occupancies)
+	end)
+
+	if not ok then
+		warn(`[WorldService] WriteVoxels failed at ({originX}, {originZ}): {err}`)
+		return false
+	end
+
+	return true
 end
 
 local function buildTerrain()
 	Workspace.Terrain:Clear()
 
-	local chunks = 0
+	local written, failed = 0, 0
 	for x = -HALF, HALF - CHUNK, CHUNK do
 		for z = -HALF, HALF - CHUNK, CHUNK do
-			writeChunk(x, z)
-			chunks += 1
+			if writeChunk(x, z) then
+				written += 1
+			else
+				failed += 1
+			end
 		end
 		-- Yield a frame per row so the server never looks hung.
 		task.wait()
 	end
 
-	print(`[Quarantine Zone] terrain written in {chunks} chunks`)
+	print(`[Quarantine Zone] terrain: {written} chunks written, {failed} failed`)
+	print(`[Quarantine Zone] height at origin = {math.floor(terrainHeight(0, 0))}`)
 end
 
 --- Forest ----------------------------------------------------------------
@@ -300,9 +316,9 @@ end
 
 local function applyLighting()
 	Lighting.Technology = Enum.Technology.Future
-	Lighting.Brightness = 2.2
-	Lighting.ClockTime = 15.4
-	Lighting.GeographicLatitude = 12
+	Lighting.Brightness = 2.6
+	Lighting.ClockTime = 14
+	Lighting.GeographicLatitude = 0
 	Lighting.Ambient = Color3.fromRGB(28, 30, 34)
 	Lighting.OutdoorAmbient = Color3.fromRGB(96, 102, 112)
 	Lighting.EnvironmentDiffuseScale = 0.9
@@ -324,18 +340,20 @@ local function applyLighting()
 	end
 
 	local atmosphere = Instance.new("Atmosphere")
-	atmosphere.Density = 0.34
-	atmosphere.Offset = 0.15
-	atmosphere.Color = Color3.fromRGB(199, 201, 206)
-	atmosphere.Decay = Color3.fromRGB(106, 112, 125)
-	atmosphere.Glare = 0.28
-	atmosphere.Haze = 1.9
+	-- Haze is the setting that turns a landscape into soup. Kept low: enough
+	-- to give the mountains depth, not enough to hide them.
+	atmosphere.Density = 0.28
+	atmosphere.Offset = 0.1
+	atmosphere.Color = Color3.fromRGB(206, 210, 216)
+	atmosphere.Decay = Color3.fromRGB(128, 140, 158)
+	atmosphere.Glare = 0.08
+	atmosphere.Haze = 0.4
 	atmosphere.Parent = Lighting
 
 	local bloom = Instance.new("BloomEffect")
-	bloom.Intensity = 0.55
-	bloom.Size = 26
-	bloom.Threshold = 1.15
+	bloom.Intensity = 0.3
+	bloom.Size = 20
+	bloom.Threshold = 1.5
 	bloom.Parent = Lighting
 
 	local sunRays = Instance.new("SunRaysEffect")
@@ -350,14 +368,23 @@ local function applyLighting()
 	colour.TintColor = Color3.fromRGB(250, 248, 242)
 	colour.Parent = Lighting
 
-	-- Shallow, far-focused blur: it separates the mountains from the valley
-	-- without smearing anything the player is actually looking at.
-	local depth = Instance.new("DepthOfFieldEffect")
-	depth.FarIntensity = 0.28
-	depth.NearIntensity = 0
-	depth.FocusDistance = 90
-	depth.InFocusRadius = 320
-	depth.Parent = Lighting
+end
+
+--- Spawn ----------------------------------------------------------------
+
+-- A real SpawnLocation on the plateau, so a player is never left falling
+-- through the void when plot assignment has not happened yet.
+local function buildSpawn()
+	local pad = Instance.new("SpawnLocation")
+	pad.Name = "PlateauSpawn"
+	pad.Anchored = true
+	pad.Size = Vector3.new(24, 1, 24)
+	pad.Position = Vector3.new(0, PLATEAU_Y + 1, PLATEAU_HALF_Z - 40)
+	pad.Color = Color3.fromRGB(112, 108, 100)
+	pad.Material = Enum.Material.Concrete
+	pad.TopSurface = Enum.SurfaceType.Smooth
+	pad.Duration = 0
+	pad.Parent = Workspace
 end
 
 --- Public ----------------------------------------------------------------
@@ -373,6 +400,7 @@ function WorldService.start()
 
 	applyLighting()
 	buildTerrain()
+	buildSpawn()
 	buildForest()
 
 	print("[Quarantine Zone] world ready")
