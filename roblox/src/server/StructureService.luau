@@ -19,14 +19,12 @@ local FOLDER_NAME = "Structures"
 local COPIES_PER_MODEL = 3
 local PLACEMENT_ATTEMPTS = 400
 
--- Keep clear of the shelters.
-local PLATEAU_HALF_X = 265
-local PLATEAU_HALF_Z = 120
-local PLATEAU_MARGIN = 120
+-- Keep the spawn clearing empty.
+local CLEARING_RADIUS = 300
 
-local HALF = 1536
+local HALF = 2560
 local WATER_LEVEL = 0
-local MAX_HEIGHT = 120
+local MAX_HEIGHT = 170
 local MAX_SLOPE = 6              -- studs of height difference across the pad
 
 local PAD_OVERHANG = 8           -- studs of flat ground beyond the footprint
@@ -100,9 +98,7 @@ local function place(template: Model, parent: Folder, rng: Random): boolean
 		local x = rng:NextNumber(-HALF + 200, HALF - 200)
 		local z = rng:NextNumber(-HALF + 200, HALF - 200)
 
-		if math.abs(x) < PLATEAU_HALF_X + PLATEAU_MARGIN
-			and math.abs(z) < PLATEAU_HALF_Z + PLATEAU_MARGIN
-		then
+		if math.sqrt(x * x + z * z) < CLEARING_RADIUS then
 			continue
 		end
 

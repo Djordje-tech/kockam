@@ -31,26 +31,18 @@ end
 
 print("[QZ] booting")
 
-local DataService = require(need("DataService"))
-local PlotService = require(need("PlotService"))
-local ShelterService = require(need("ShelterService"))
-local WorldService = require(need("WorldService"))
-local StructureService = require(need("StructureService"))
 local SurvivalService = require(need("SurvivalService"))
+local WorldService = require(need("WorldService"))
 local BuildingService = require(need("BuildingService"))
+local StructureService = require(need("StructureService"))
 
 print("[QZ] modules loaded")
 
--- Data first: requiring it publishes the remotes the client is waiting on.
-step("DataService", DataService.start)
-step("PlotService", PlotService.start)
-step("ShelterService", ShelterService.start)
+-- Survival first: requiring it publishes the remotes the client waits on.
 step("SurvivalService", SurvivalService.start)
 
--- World last. It is the slow one, and nothing else depends on it existing.
+-- Then the world, then everything that needs terrain to stand on.
 step("WorldService", WorldService.start)
-
--- After the world, because both need terrain to stand on.
 step("BuildingService", BuildingService.start)
 step("StructureService", StructureService.start)
 

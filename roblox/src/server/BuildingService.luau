@@ -35,16 +35,16 @@ local ROOM_DEPTH = 16          -- along the corridor, per room
 
 --- Placement constants ---------------------------------------------------
 
-local HALF = 1536
+local HALF = 2560
 local WATER_LEVEL = 0
-local MAX_SITE_HEIGHT = 115
+local MAX_SITE_HEIGHT = 170
 local MAX_SITE_SLOPE = 5
 local PLACEMENT_ATTEMPTS = 300
-local BUILDING_COUNT = 14
+local BUILDING_COUNT = 26
 
-local PLATEAU_HALF_X = 265
-local PLATEAU_HALF_Z = 120
-local PLATEAU_MARGIN = 140
+-- Keep the spawn clearing empty so players do not open their eyes inside a
+-- supermarket.
+local CLEARING_RADIUS = 300
 
 local PAD_OVERHANG = 10
 local PAD_DEPTH = 24
@@ -437,12 +437,10 @@ local function findSite(kind: Buildings.BuildingKind, ignore: { Instance }, rng:
 	local radius = math.max(kind.Footprint.X, kind.Footprint.Y)
 
 	for _ = 1, PLACEMENT_ATTEMPTS do
-		local x = rng:NextNumber(-HALF + 260, HALF - 260)
-		local z = rng:NextNumber(-HALF + 260, HALF - 260)
+		local x = rng:NextNumber(-HALF + 300, HALF - 300)
+		local z = rng:NextNumber(-HALF + 300, HALF - 300)
 
-		if math.abs(x) < PLATEAU_HALF_X + PLATEAU_MARGIN
-			and math.abs(z) < PLATEAU_HALF_Z + PLATEAU_MARGIN
-		then
+		if math.sqrt(x * x + z * z) < CLEARING_RADIUS then
 			continue
 		end
 
