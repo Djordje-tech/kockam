@@ -1,0 +1,16 @@
+# Unreal build and derived data. None of this belongs in git — it is all
+# regenerated from Source/ and Config/ on the next build.
+Binaries/
+Build/
+DerivedDataCache/
+Intermediate/
+Saved/
+.vs/
+.vscode/
+*.sln
+*.suo
+*.xcodeproj/
+*.xcworkspace/
+
+# Content/ is deliberately NOT ignored, but note that .uasset and .umap are
+# binary: they can be committed, they just cannot be diffed or merged.
