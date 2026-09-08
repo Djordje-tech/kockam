@@ -2,21 +2,18 @@
   "name": "quarantine-zone",
   "tree": {
     "$className": "DataModel",
-
     "ReplicatedStorage": {
       "$className": "ReplicatedStorage",
       "Shared": {
         "$path": "src/shared"
       }
     },
-
     "ServerScriptService": {
       "$className": "ServerScriptService",
       "Server": {
         "$path": "src/server"
       }
     },
-
     "StarterPlayer": {
       "$className": "StarterPlayer",
       "StarterPlayerScripts": {
@@ -26,20 +23,17 @@
         }
       }
     },
-
     "Lighting": {
       "$className": "Lighting",
       "$properties": {
-        "Technology": "Future",
-        "Brightness": 1.4,
-        "ClockTime": 16.5,
-        "Ambient": [0.09, 0.09, 0.1],
-        "OutdoorAmbient": [0.28, 0.28, 0.3],
-        "EnvironmentDiffuseScale": 0.45,
-        "EnvironmentSpecularScale": 0.3,
-        "FogColor": [0.42, 0.43, 0.44],
-        "FogStart": 60,
-        "FogEnd": 700
+        "Technology": "Future"
+      }
+    },
+    "Workspace": {
+      "$className": "Workspace",
+      "$properties": {
+        "StreamingEnabled": true,
+        "StreamingTargetRadius": 1024
       }
     }
   }

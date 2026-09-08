@@ -1,16 +1,13 @@
 --!strict
--- Generates the island: mountains, a river, lakes, forest, and the lighting
--- that holds it together.
+-- Generates the island: mountains, rivers, lakes, forest, and the look that
+-- holds it together.
 --
 -- The terrain is written as voxels from layered noise rather than sculpted by
 -- hand. That keeps the whole world in a diff, costs nothing in the place file,
 -- and makes re-rolling the landscape a one-seed change.
 
 local Lighting = game:GetService("Lighting")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
-
-local Config = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("Config"))
 
 local WorldService = {}
 
@@ -19,26 +16,26 @@ local SEED = 1337
 --- Shape -----------------------------------------------------------------
 
 local RES = 4                    -- Roblox voxel size, in studs
-local HALF = 512                 -- map extends +/- this on X and Z
-local CHUNK = 128                -- studs generated per WriteVoxels call
+local HALF = 1536                -- map extends +/- this on X and Z
+local CHUNK = 128                -- studs per WriteVoxels call
 
-local FLOOR_Y = -60
-local CEILING_Y = 220
+local FLOOR_Y = -80
+local CEILING_Y = 340
 local WATER_LEVEL = 0
 
-local SNOW_LINE = 132
-local ROCK_LINE = 88
-local SHORE_BAND = 5
+local SNOW_LINE = 205
+local ROCK_LINE = 130
+local SHORE_BAND = 6
 
 -- The shelters need somewhere flat to stand, so a plateau is stamped over
 -- whatever the noise produced in the middle of the map.
 local PLATEAU_Y = 24
 local PLATEAU_HALF_X = 265
 local PLATEAU_HALF_Z = 120
-local PLATEAU_BLEND = 90         -- studs of ramp from plateau down to terrain
+local PLATEAU_BLEND = 160        -- studs of ramp from plateau down to terrain
 
-local RIVER_WIDTH = 44
-local RIVER_DEPTH = 26
+local RIVER_WIDTH = 64
+local RIVER_DEPTH = 34
 
 --- Height field ----------------------------------------------------------
 
@@ -47,34 +44,38 @@ local function smoothstep(edge0: number, edge1: number, x: number): number
 	return t * t * (3 - 2 * t)
 end
 
--- Where the river's centreline sits at a given depth into the map.
-local function riverCentre(z: number): number
-	return math.noise(z / 420, SEED * 0.17) * 260
+-- Where a river's centreline sits at a given depth into the map. Two of them,
+-- offset, so the map has more than one piece of water running through it.
+local function riverCentre(z: number, channel: number): number
+	return math.noise(z / 900, SEED * 0.17 + channel * 40) * 900 + channel * 520
 end
 
 local function terrainHeight(x: number, z: number): number
-	local sx, sz = x / 1000 + SEED, z / 1000 + SEED
+	-- Feature size scales with the map, so a bigger island gets bigger
+	-- mountains rather than the same hills spread thinner.
+	local sx, sz = x / 3000 + SEED, z / 3000 + SEED
 
-	-- Three octaves: ranges, then hills, then surface detail.
-	local height = math.noise(sx * 1.4, sz * 1.4) * 210
-		+ math.noise(sx * 4.5, sz * 4.5) * 52
-		+ math.noise(sx * 14, sz * 14) * 11
+	local height = math.noise(sx * 1.4, sz * 1.4) * 330
+		+ math.noise(sx * 4.5, sz * 4.5) * 88
+		+ math.noise(sx * 13, sz * 13) * 22
+		+ math.noise(sx * 34, sz * 34) * 6
 
 	-- Radial falloff turns the noise field into an island instead of a slab
 	-- that gets cut off at the edges.
 	local distance = math.sqrt(x * x + z * z) / HALF
-	height -= smoothstep(0.62, 1.05, distance) * 210
+	height -= smoothstep(0.58, 1.02, distance) * 320
 
-	-- Carve the river. It cuts below the waterline, so it fills itself.
-	local offset = math.abs(x - riverCentre(z))
-	local cut = 1 - smoothstep(RIVER_WIDTH * 0.35, RIVER_WIDTH, offset)
-	height -= cut * RIVER_DEPTH
+	-- Carve the rivers. They cut below the waterline, so they fill themselves.
+	for channel = -1, 1 do
+		local offset = math.abs(x - riverCentre(z, channel))
+		local cut = 1 - smoothstep(RIVER_WIDTH * 0.3, RIVER_WIDTH, offset)
+		height -= cut * RIVER_DEPTH
+	end
 
 	-- Stamp the plateau, ramping out so it does not read as a cut-out box.
 	local px = math.abs(x) - PLATEAU_HALF_X
 	local pz = math.abs(z) - PLATEAU_HALF_Z
-	local outside = math.max(px, pz)
-	local flatness = 1 - smoothstep(0, PLATEAU_BLEND, outside)
+	local flatness = 1 - smoothstep(0, PLATEAU_BLEND, math.max(px, pz))
 	height = height * (1 - flatness) + PLATEAU_Y * flatness
 
 	return height
@@ -84,13 +85,13 @@ local function surfaceMaterial(height: number, slope: number): Enum.Material
 	if height > SNOW_LINE then
 		return Enum.Material.Snow
 	end
-	if height > ROCK_LINE or slope > 0.85 then
+	if height > ROCK_LINE or slope > 0.95 then
 		return Enum.Material.Rock
 	end
 	if height < WATER_LEVEL + SHORE_BAND then
 		return Enum.Material.Sand
 	end
-	if slope > 0.55 then
+	if slope > 0.6 then
 		return Enum.Material.Ground
 	end
 	return Enum.Material.Grass
@@ -98,34 +99,31 @@ end
 
 --- Voxel writing ---------------------------------------------------------
 
-local function writeChunk(originX: number, originZ: number)
-	local region = Region3.new(
-		Vector3.new(originX, FLOOR_Y, originZ),
-		Vector3.new(originX + CHUNK, CEILING_Y, originZ + CHUNK)
-	):ExpandToGrid(RES)
+local function snapDown(value: number): number
+	return math.floor(value / RES) * RES
+end
 
-	local size = region.Size
-	local corner = region.CFrame.Position - size / 2
+local function snapUp(value: number): number
+	return math.ceil(value / RES) * RES
+end
 
-	-- round, not floor: a region size that lands a hair under a multiple of
-	-- RES would truncate here and hand WriteVoxels arrays one column short,
-	-- which it rejects outright.
-	local nx = math.round(size.X / RES)
-	local ny = math.round(size.Y / RES)
-	local nz = math.round(size.Z / RES)
+local function writeChunk(originX: number, originZ: number): boolean
+	local columns = CHUNK // RES
 
 	-- Height is per column, so it is sampled once per (x, z) instead of once
 	-- per voxel. That is the difference between seconds and minutes.
-	local heights = table.create(nx)
-	local slopes = table.create(nx)
+	local heights = table.create(columns)
+	local slopes = table.create(columns)
 
-	for ix = 1, nx do
-		local wx = corner.X + (ix - 0.5) * RES
-		local columnHeights = table.create(nz)
-		local columnSlopes = table.create(nz)
+	local minHeight, maxHeight = math.huge, -math.huge
 
-		for iz = 1, nz do
-			local wz = corner.Z + (iz - 0.5) * RES
+	for ix = 1, columns do
+		local wx = originX + (ix - 0.5) * RES
+		local columnHeights = table.create(columns)
+		local columnSlopes = table.create(columns)
+
+		for iz = 1, columns do
+			local wz = originZ + (iz - 0.5) * RES
 			local here = terrainHeight(wx, wz)
 
 			-- Central difference gives the gradient, which is what decides
@@ -135,11 +133,38 @@ local function writeChunk(originX: number, originZ: number)
 
 			columnHeights[iz] = here
 			columnSlopes[iz] = math.sqrt(dx * dx + dz * dz) / (2 * RES)
+
+			minHeight = math.min(minHeight, here)
+			maxHeight = math.max(maxHeight, here)
 		end
 
 		heights[ix] = columnHeights
 		slopes[ix] = columnSlopes
 	end
+
+	-- Only write the band this chunk actually occupies. Most of the map is
+	-- nowhere near the full vertical range, and writing empty air above every
+	-- meadow is what makes a large map impossible.
+	local lowY = math.max(FLOOR_Y, snapDown(math.min(minHeight, WATER_LEVEL) - 12))
+	local highY = math.min(CEILING_Y, snapUp(math.max(maxHeight, WATER_LEVEL) + 8))
+
+	if highY <= lowY then
+		return true
+	end
+
+	local region = Region3.new(
+		Vector3.new(originX, lowY, originZ),
+		Vector3.new(originX + CHUNK, highY, originZ + CHUNK)
+	):ExpandToGrid(RES)
+
+	local size = region.Size
+	local corner = region.CFrame.Position - size / 2
+
+	-- round, not floor: a size landing a hair under a multiple of RES would
+	-- truncate and hand WriteVoxels arrays one column short, which it rejects.
+	local nx = math.round(size.X / RES)
+	local ny = math.round(size.Y / RES)
+	local nz = math.round(size.Z / RES)
 
 	local materials = table.create(nx)
 	local occupancies = table.create(nx)
@@ -178,7 +203,7 @@ local function writeChunk(originX: number, originZ: number)
 	end
 
 	local ok, err = pcall(function()
-			Workspace.Terrain:WriteVoxels(region, RES, materials, occupancies)
+		Workspace.Terrain:WriteVoxels(region, RES, materials, occupancies)
 	end)
 
 	if not ok then
@@ -193,6 +218,8 @@ local function buildTerrain()
 	Workspace.Terrain:Clear()
 
 	local written, failed = 0, 0
+	local rows = 0
+
 	for x = -HALF, HALF - CHUNK, CHUNK do
 		for z = -HALF, HALF - CHUNK, CHUNK do
 			if writeChunk(x, z) then
@@ -201,65 +228,129 @@ local function buildTerrain()
 				failed += 1
 			end
 		end
+
+		rows += 1
 		-- Yield a frame per row so the server never looks hung.
 		task.wait()
+
+		if rows % 6 == 0 then
+			print(`[QZ] terrain {math.floor(rows / (2 * HALF / CHUNK) * 100)}%`)
+		end
 	end
 
-	print(`[Quarantine Zone] terrain: {written} chunks written, {failed} failed`)
-	print(`[Quarantine Zone] height at origin = {math.floor(terrainHeight(0, 0))}`)
+	print(`[QZ] terrain: {written} chunks written, {failed} failed`)
+	print(`[QZ] height at origin = {math.floor(terrainHeight(0, 0))}`)
 end
 
 --- Forest ----------------------------------------------------------------
 
-local function plantTree(rng: Random, position: Vector3, parent: Folder)
-	local height = rng:NextNumber(16, 30)
-	local lean = CFrame.Angles(
-		math.rad(rng:NextNumber(-4, 4)),
-		rng:NextNumber(0, math.pi * 2),
-		math.rad(rng:NextNumber(-4, 4))
-	)
+-- Stylised, not realistic: layered rounded canopies in saturated greens, the
+-- way a hand-painted game does it. Roblox cannot do photoreal foliage without
+-- imported meshes, but it does this look very well.
+local CANOPY_GREENS = {
+	Color3.fromRGB(104, 158, 68),
+	Color3.fromRGB(126, 176, 76),
+	Color3.fromRGB(86, 140, 62),
+	Color3.fromRGB(142, 186, 88),
+	Color3.fromRGB(74, 124, 58),
+}
+
+local AUTUMN = {
+	Color3.fromRGB(214, 168, 62),
+	Color3.fromRGB(198, 134, 54),
+	Color3.fromRGB(224, 190, 84),
+}
+
+local function ball(parent: Instance, position: Vector3, diameter: number, colour: Color3, squash: number)
+	local blob = Instance.new("Part")
+	blob.Anchored = true
+	blob.CanCollide = false
+	blob.CanQuery = false
+	blob.CastShadow = true
+	blob.Shape = Enum.PartType.Ball
+	blob.Size = Vector3.new(diameter, diameter * squash, diameter)
+	blob.Position = position
+	blob.Color = colour
+	blob.Material = Enum.Material.Grass
+	blob.Parent = parent
+end
+
+local function plantTree(rng: Random, base: Vector3, parent: Instance)
+	local autumn = rng:NextNumber() < 0.14
+	local palette = if autumn then AUTUMN else CANOPY_GREENS
+	local tint = palette[rng:NextInteger(1, #palette)]
+
+	local tall = rng:NextNumber() < 0.3
+	local height = if tall then rng:NextNumber(34, 52) else rng:NextNumber(20, 32)
+	local trunkWidth = height * 0.09
 
 	local trunk = Instance.new("Part")
 	trunk.Name = "Trunk"
 	trunk.Anchored = true
 	trunk.Shape = Enum.PartType.Cylinder
-	trunk.Size = Vector3.new(height, 2.6, 2.6)
+	trunk.Size = Vector3.new(height, trunkWidth, trunkWidth)
 	-- A cylinder's length runs along X, so it has to be stood upright.
-	trunk.CFrame = CFrame.new(position + Vector3.new(0, height / 2, 0))
-		* lean
+	trunk.CFrame = CFrame.new(base + Vector3.new(0, height * 0.45, 0))
 		* CFrame.Angles(0, 0, math.pi / 2)
-	trunk.Color = Color3.fromRGB(74, 56, 42)
+	trunk.Color = Color3.fromRGB(96, 70, 50)
 	trunk.Material = Enum.Material.Wood
 	trunk.Parent = parent
 
-	-- Two offset canopies read as a fuller crown than one sphere ever does.
-	local greens = {
-		Color3.fromRGB(58, 84, 48),
-		Color3.fromRGB(48, 72, 44),
-		Color3.fromRGB(68, 92, 52),
+	-- Four overlapping blobs of decreasing size. The overlap is the whole
+	-- trick: separate spheres read as balls on a stick, merged ones read as
+	-- a canopy.
+	local layers = rng:NextInteger(3, 4)
+	local spread = height * (if tall then 0.5 else 0.78)
+
+	for layer = 1, layers do
+		local t = (layer - 1) / layers
+		local diameter = spread * (1 - t * 0.42)
+
+		ball(
+			parent,
+			base + Vector3.new(
+				rng:NextNumber(-spread, spread) * 0.16,
+				height * (0.66 + t * 0.3),
+				rng:NextNumber(-spread, spread) * 0.16
+			),
+			diameter,
+			tint:Lerp(Color3.new(1, 1, 1), t * 0.16),
+			if tall then 1.15 else 0.82
+		)
+	end
+end
+
+local function plantBush(rng: Random, base: Vector3, parent: Instance)
+	local tint = CANOPY_GREENS[rng:NextInteger(1, #CANOPY_GREENS)]
+	for index = 1, 2 do
+		ball(
+			parent,
+			base + Vector3.new(rng:NextNumber(-2, 2), 1.6 + index * 0.9, rng:NextNumber(-2, 2)),
+			rng:NextNumber(5, 9) - index,
+			tint,
+			0.8
+		)
+	end
+end
+
+local function plantFlower(rng: Random, base: Vector3, parent: Instance)
+	local colours = {
+		Color3.fromRGB(240, 208, 84),
+		Color3.fromRGB(238, 240, 244),
+		Color3.fromRGB(226, 128, 142),
 	}
 
-	for index = 1, 2 do
-		local spread = rng:NextNumber(11, 16) - index * 2.5
-
-		local canopy = Instance.new("Part")
-		canopy.Name = "Canopy" .. index
-		canopy.Anchored = true
-		canopy.CanCollide = false
-		canopy.Shape = Enum.PartType.Ball
-		canopy.Size = Vector3.new(spread, spread * 0.85, spread)
-		canopy.CFrame = CFrame.new(
-			position
-				+ Vector3.new(
-					rng:NextNumber(-2, 2),
-					height * (0.72 + index * 0.16),
-					rng:NextNumber(-2, 2)
-				)
-		)
-		canopy.Color = greens[rng:NextInteger(1, #greens)]
-		canopy.Material = Enum.Material.Grass
-		canopy.Parent = parent
-	end
+	local bloom = Instance.new("Part")
+	bloom.Anchored = true
+	bloom.CanCollide = false
+	bloom.CanQuery = false
+	bloom.CastShadow = false
+	bloom.Shape = Enum.PartType.Ball
+	bloom.Size = Vector3.new(1.1, 1.1, 1.1)
+	bloom.Position = base + Vector3.new(0, 0.9, 0)
+	bloom.Color = colours[rng:NextInteger(1, #colours)]
+	bloom.Material = Enum.Material.SmoothPlastic
+	bloom.Parent = parent
 end
 
 local function buildForest()
@@ -273,50 +364,59 @@ local function buildForest()
 	params.FilterType = Enum.RaycastFilterType.Exclude
 	params.FilterDescendantsInstances = { forest }
 
-	local planted = 0
+	local trees, bushes, flowers = 0, 0, 0
 	local attempts = 0
 
-	while planted < 420 and attempts < 4000 do
+	while trees < 2200 and attempts < 26000 do
 		attempts += 1
 
-		local x = rng:NextNumber(-HALF + 40, HALF - 40)
-		local z = rng:NextNumber(-HALF + 40, HALF - 40)
+		local x = rng:NextNumber(-HALF + 60, HALF - 60)
+		local z = rng:NextNumber(-HALF + 60, HALF - 60)
 
 		-- Keep the plateau clear; that is where the shelters go.
-		if math.abs(x) < PLATEAU_HALF_X + 30 and math.abs(z) < PLATEAU_HALF_Z + 30 then
+		if math.abs(x) < PLATEAU_HALF_X + 40 and math.abs(z) < PLATEAU_HALF_Z + 40 then
 			continue
 		end
 
-		local hit = Workspace:Raycast(Vector3.new(x, CEILING_Y, z), Vector3.new(0, -400, 0), params)
+		local hit = Workspace:Raycast(Vector3.new(x, CEILING_Y, z), Vector3.new(0, -700, 0), params)
 		if not hit then
 			continue
 		end
 
-		-- Trees belong on soil between the shoreline and the rock line.
+		-- Things grow on soil between the shoreline and the rock line.
 		local material = hit.Material
 		if material ~= Enum.Material.Grass and material ~= Enum.Material.Ground then
 			continue
 		end
-		if hit.Position.Y < WATER_LEVEL + 3 or hit.Position.Y > ROCK_LINE then
+		if hit.Position.Y < WATER_LEVEL + 3 or hit.Position.Y > ROCK_LINE - 10 then
 			continue
 		end
 
-		plantTree(rng, hit.Position, forest)
-		planted += 1
+		local roll = rng:NextNumber()
+		if roll < 0.72 then
+			plantTree(rng, hit.Position, forest)
+			trees += 1
+		elseif roll < 0.86 then
+			plantBush(rng, hit.Position, forest)
+			bushes += 1
+		else
+			plantFlower(rng, hit.Position, forest)
+			flowers += 1
+		end
 
-		if planted % 60 == 0 then
+		if (trees + bushes + flowers) % 150 == 0 then
 			task.wait()
 		end
 	end
 
-	print(`[Quarantine Zone] planted {planted} trees`)
+	print(`[QZ] forest: {trees} trees, {bushes} bushes, {flowers} flowers`)
 end
 
 --- Look ------------------------------------------------------------------
 
--- Every group is pcall'd separately. Engine properties change scriptability
+-- Every group is guarded separately. Engine properties change scriptability
 -- between releases, and an entire landscape should never be lost to one
--- rejected colour assignment — which is exactly what happened once already.
+-- rejected assignment — which is exactly what happened once already.
 local function guard(label: string, fn: () -> ())
 	local ok, err = pcall(fn)
 	if not ok then
@@ -328,26 +428,25 @@ local function applyLighting()
 	guard("lighting properties", function()
 		-- Technology is deliberately absent: it is not assignable from a
 		-- script. It is set in default.project.json instead.
-		Lighting.Brightness = 2.8
-		Lighting.ClockTime = 15.2
+		Lighting.Brightness = 3
+		Lighting.ClockTime = 15
 		Lighting.GeographicLatitude = 8
-		Lighting.ExposureCompensation = 0.2
+		Lighting.ExposureCompensation = 0.25
 
-		Lighting.Ambient = Color3.fromRGB(26, 29, 36)
-		Lighting.OutdoorAmbient = Color3.fromRGB(102, 110, 126)
+		Lighting.Ambient = Color3.fromRGB(40, 46, 58)
+		Lighting.OutdoorAmbient = Color3.fromRGB(126, 140, 162)
 
 		-- Image-based lighting is what makes materials read as lit by the sky
-		-- rather than by a lamp. Turned most of the way up.
+		-- rather than by a lamp.
 		Lighting.EnvironmentDiffuseScale = 1
 		Lighting.EnvironmentSpecularScale = 1
 
 		-- Warm on the lit faces, cool in the shade. This split is most of what
-		-- separates a scene that looks photographed from one that looks flat.
-		Lighting.ColorShift_Top = Color3.fromRGB(38, 30, 16)
-		Lighting.ColorShift_Bottom = Color3.fromRGB(12, 18, 30)
+		-- separates a scene that looks painted from one that looks flat.
+		Lighting.ColorShift_Top = Color3.fromRGB(56, 42, 18)
+		Lighting.ColorShift_Bottom = Color3.fromRGB(14, 22, 38)
 
-		-- Crisp, not pixelated and not cartoon-blurred.
-		Lighting.ShadowSoftness = 0.22
+		Lighting.ShadowSoftness = 0.2
 	end)
 end
 
@@ -361,20 +460,20 @@ local function applyEffects()
 
 	guard("atmosphere", function()
 		local atmosphere = Instance.new("Atmosphere")
-		atmosphere.Density = 0.32
-		atmosphere.Offset = 0.25
-		atmosphere.Color = Color3.fromRGB(202, 208, 218)
-		atmosphere.Decay = Color3.fromRGB(96, 116, 148)
-		atmosphere.Glare = 0.2
+		atmosphere.Density = 0.3
+		atmosphere.Offset = 0.3
+		atmosphere.Color = Color3.fromRGB(212, 222, 236)
+		atmosphere.Decay = Color3.fromRGB(112, 148, 190)
+		atmosphere.Glare = 0.15
 		-- Aerial perspective: enough haze that distant ridges sit behind near
 		-- ones, not so much that the map turns to soup.
-		atmosphere.Haze = 1.1
+		atmosphere.Haze = 1.2
 		atmosphere.Parent = Lighting
 	end)
 
 	guard("sky", function()
 		local sky = Instance.new("Sky")
-		sky.SunAngularSize = 12
+		sky.SunAngularSize = 14
 		sky.MoonAngularSize = 9
 		sky.StarCount = 3000
 		sky.Parent = Lighting
@@ -382,32 +481,33 @@ local function applyEffects()
 
 	guard("post stack", function()
 		local bloom = Instance.new("BloomEffect")
-		bloom.Intensity = 0.45
-		bloom.Size = 24
+		bloom.Intensity = 0.5
+		bloom.Size = 26
 		-- High threshold so only genuinely bright things bleed. A low
 		-- threshold is what makes a scene look washed out.
-		bloom.Threshold = 1.6
+		bloom.Threshold = 1.55
 		bloom.Parent = Lighting
 
 		local sunRays = Instance.new("SunRaysEffect")
-		sunRays.Intensity = 0.06
+		sunRays.Intensity = 0.07
 		sunRays.Spread = 1
 		sunRays.Parent = Lighting
 
 		local colour = Instance.new("ColorCorrectionEffect")
-		colour.Brightness = 0
-		colour.Contrast = 0.12
-		colour.Saturation = 0.06
-		colour.TintColor = Color3.fromRGB(255, 251, 244)
+		colour.Brightness = 0.01
+		colour.Contrast = 0.16
+		-- Pushed up rather than down: the reference look is saturated.
+		colour.Saturation = 0.18
+		colour.TintColor = Color3.fromRGB(255, 250, 240)
 		colour.Parent = Lighting
 
 		-- Near intensity stays at zero so whatever the player is standing next
 		-- to is always sharp; only the far ridgelines soften.
 		local depth = Instance.new("DepthOfFieldEffect")
 		depth.NearIntensity = 0
-		depth.FarIntensity = 0.32
-		depth.FocusDistance = 220
-		depth.InFocusRadius = 520
+		depth.FarIntensity = 0.3
+		depth.FocusDistance = 260
+		depth.InFocusRadius = 640
 		depth.Parent = Lighting
 	end)
 end
@@ -416,11 +516,11 @@ local function applyTerrainLook()
 	local terrain = Workspace.Terrain
 
 	guard("water", function()
-		terrain.WaterColor = Color3.fromRGB(26, 78, 92)
-		terrain.WaterTransparency = 0.85
-		terrain.WaterReflectance = 0.6
-		terrain.WaterWaveSize = 0.1
-		terrain.WaterWaveSpeed = 10
+		terrain.WaterColor = Color3.fromRGB(42, 122, 148)
+		terrain.WaterTransparency = 0.78
+		terrain.WaterReflectance = 0.55
+		terrain.WaterWaveSize = 0.09
+		terrain.WaterWaveSpeed = 12
 	end)
 
 	guard("terrain decoration", function()
@@ -430,14 +530,14 @@ local function applyTerrainLook()
 	end)
 
 	guard("material colours", function()
-		-- Roblox's defaults are saturated and toy-like. Desaturated, slightly
-		-- cooler values read as real ground.
-		terrain:SetMaterialColor(Enum.Material.Grass, Color3.fromRGB(88, 106, 66))
-		terrain:SetMaterialColor(Enum.Material.Ground, Color3.fromRGB(96, 86, 70))
-		terrain:SetMaterialColor(Enum.Material.Rock, Color3.fromRGB(102, 100, 98))
-		terrain:SetMaterialColor(Enum.Material.Slate, Color3.fromRGB(84, 84, 88))
-		terrain:SetMaterialColor(Enum.Material.Sand, Color3.fromRGB(168, 156, 128))
-		terrain:SetMaterialColor(Enum.Material.Snow, Color3.fromRGB(232, 236, 242))
+		-- Saturated and warm, to match a hand-painted look rather than the
+		-- muted realism the defaults aim for.
+		terrain:SetMaterialColor(Enum.Material.Grass, Color3.fromRGB(118, 166, 74))
+		terrain:SetMaterialColor(Enum.Material.Ground, Color3.fromRGB(122, 100, 72))
+		terrain:SetMaterialColor(Enum.Material.Rock, Color3.fromRGB(118, 116, 112))
+		terrain:SetMaterialColor(Enum.Material.Slate, Color3.fromRGB(96, 98, 102))
+		terrain:SetMaterialColor(Enum.Material.Sand, Color3.fromRGB(214, 196, 152))
+		terrain:SetMaterialColor(Enum.Material.Snow, Color3.fromRGB(240, 244, 250))
 	end)
 
 	guard("clouds", function()
@@ -449,14 +549,14 @@ local function applyTerrainLook()
 		end
 
 		local clouds = Instance.new("Clouds")
-		clouds.Cover = 0.62
-		clouds.Density = 0.7
-		clouds.Color = Color3.fromRGB(255, 253, 248)
+		clouds.Cover = 0.55
+		clouds.Density = 0.62
+		clouds.Color = Color3.fromRGB(255, 254, 250)
 		clouds.Parent = terrain
 	end)
 end
 
---- Spawn ----------------------------------------------------------------
+--- Spawn -----------------------------------------------------------------
 
 -- A real SpawnLocation on the plateau, so a player is never left falling
 -- through the void when plot assignment has not happened yet.
@@ -491,7 +591,7 @@ function WorldService.start()
 	buildTerrain()
 	buildForest()
 
-	print("[Quarantine Zone] world ready")
+	print("[QZ] world ready")
 end
 
 return WorldService
