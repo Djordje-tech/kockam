@@ -17,6 +17,17 @@ me (cloud)  --push-->  GitHub  --pull-->  your PC  --rojo-->  Roblox Studio
 
 ## One-time setup (about 10 minutes)
 
+### 0. Install Git
+
+You need Git to pull my pushes. Check whether you already have it:
+
+```powershell
+git --version
+```
+
+If that errors, install it from <https://git-scm.com/downloads>, accept every
+default, then open a **new** terminal and check again.
+
 ### 1. Install Roblox Studio
 <https://create.roblox.com/> → Download Studio. Sign in with your Roblox
 account.
@@ -79,6 +90,39 @@ updates within about five seconds, live, while it's open.
 Progress only persists if DataStores are enabled:
 **Game Settings → Security → Enable Studio Access to API Services → Save.**
 Without it the game runs fine, you just start at 0 coins each session.
+
+## When something doesn't work
+
+The four ways this actually breaks, and the fix for each.
+
+**`.\watch.ps1` says "running scripts is disabled on this system"**
+Windows blocks unsigned scripts by default. Either allow them for your user
+once:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+```
+
+or skip the policy for this one run without changing any setting:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\watch.ps1
+```
+
+**`rojo` or `git` "is not recognized"**
+The tool isn't on your PATH, or the terminal predates the install. Close the
+terminal, open a new one, and try again. Still failing means the PATH entry
+didn't take — recheck step 0 or step 2.
+
+**The Rojo plugin says it can't connect**
+`rojo serve` isn't running. It lives in the `watch.ps1` window — if that window
+has closed or shows an error, restart it. The plugin connects to
+`localhost:34872`.
+
+**Studio connects but the Explorer is empty**
+You connected before the server was ready, or you're in a place where Rojo
+already synced and then disconnected. Hit **Disconnect** then **Connect** again
+in the Rojo panel.
 
 ## Publishing it
 
