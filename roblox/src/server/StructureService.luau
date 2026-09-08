@@ -165,8 +165,27 @@ local function place(template: Model, parent: Folder, rng: Random): boolean
 	return false
 end
 
+-- Matched loosely on purpose. This folder is created by hand in Studio, and
+-- an exact-name lookup turns a typo or a lowercase S into a silent no-op with
+-- nothing to debug.
+local function findSourceFolder(): Instance?
+	local exact = ServerStorage:FindFirstChild(FOLDER_NAME)
+	if exact then
+		return exact
+	end
+
+	for _, child in ServerStorage:GetChildren() do
+		if string.lower(child.Name):find("struct", 1, true) then
+			warn(`[QZ] using '{child.Name}' as the structures folder - rename it to '{FOLDER_NAME}'`)
+			return child
+		end
+	end
+
+	return nil
+end
+
 function StructureService.start()
-	local source = ServerStorage:FindFirstChild(FOLDER_NAME)
+	local source = findSourceFolder()
 	if not source then
 		print(`[QZ] no ServerStorage.{FOLDER_NAME} folder - skipping structures`)
 		return
