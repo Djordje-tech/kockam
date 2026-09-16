@@ -1,0 +1,36 @@
+//@version=6
+indicator("Key Opens — 00:00 / 02:00 / 06:00 / 10:00 / 18:00", overlay = true, max_lines_count = 500)
+
+// ── Inputs ────────────────────────────────────────────────────────────────────
+tz        = input.string("Etc/UTC", "Timezone", options = ["Etc/UTC", "America/New_York", "America/Chicago", "Europe/London", "Europe/Berlin", "Asia/Tokyo", "Asia/Shanghai", "Asia/Dubai", "Australia/Sydney"])
+lineColor = input.color(color.new(color.white, 0), "Line color")
+lineWidth = input.int(1, "Line width", minval = 1, maxval = 4)
+lineStyle = input.string("Solid", "Line style", options = ["Solid", "Dashed", "Dotted"])
+maxLines  = input.int(200, "Max lines kept on chart", minval = 1, maxval = 500)
+
+show00 = input.bool(true, "00:00", inline = "h1")
+show02 = input.bool(true, "02:00", inline = "h1")
+show06 = input.bool(true, "06:00", inline = "h2")
+show10 = input.bool(true, "10:00", inline = "h2")
+show18 = input.bool(true, "18:00", inline = "h2")
+
+style = lineStyle == "Dashed" ? line.style_dashed : lineStyle == "Dotted" ? line.style_dotted : line.style_solid
+
+// ── Detect the first bar of each key hour ─────────────────────────────────────
+h       = hour(time, tz)
+newHour = na(h[1]) ? false : h != h[1]
+
+isKey = (h == 0 and show00) or (h == 2 and show02) or (h == 6 and show06) or (h == 10 and show10) or (h == 18 and show18)
+
+// Only meaningful on intraday timeframes of 1H or less
+validTF = timeframe.isintraday and timeframe.in_seconds() <= 3600
+
+// ── Draw ──────────────────────────────────────────────────────────────────────
+var line[] lines = array.new_line()
+
+if validTF and newHour and isKey
+    // a vertical segment extended both ways spans the whole visible price range
+    l = line.new(x1 = time, y1 = low, x2 = time, y2 = high == low ? high + syminfo.mintick : high, xloc = xloc.bar_time, extend = extend.both, color = lineColor, width = lineWidth, style = style)
+    array.push(lines, l)
+    if array.size(lines) > maxLines
+        line.delete(array.shift(lines))
