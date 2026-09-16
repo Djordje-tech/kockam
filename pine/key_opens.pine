@@ -6,6 +6,7 @@ TZ = "UTC-4"
 
 lineColor = input.color(color.new(color.white, 0), "Line color")
 lineWidth = input.int(1, "Line width", minval = 1, maxval = 4)
+snapEdge  = input.bool(true, "Snap to candle open (left edge)", tooltip = "On: line sits on the candle's opening edge. Off: line runs through the middle of the candle.")
 
 // ── Detect the first bar of each key hour ─────────────────────────────────────
 h       = hour(time, TZ)
@@ -18,6 +19,10 @@ newDay = na(d[1]) ? false : d != d[1]
 
 validTF = timeframe.isintraday and timeframe.in_seconds() <= 3600
 
+// A bar's timestamp is drawn through the CENTRE of the candle, so shift back
+// half a bar to land on the opening edge.
+halfBarMs = timeframe.in_seconds() * 500
+
 // ── Draw ──────────────────────────────────────────────────────────────────────
 var line[] lines = array.new_line()
 
@@ -26,6 +31,6 @@ if newDay
         line.delete(array.pop(lines))
 
 if validTF and newHour and isKey
-    // anchored at the candle's open price, extended both ways = full-height vertical
-    l = line.new(x1 = time, y1 = open, x2 = time, y2 = open + syminfo.mintick, xloc = xloc.bar_time, extend = extend.both, color = lineColor, width = lineWidth, style = line.style_solid)
+    x = snapEdge ? time - halfBarMs : time
+    l = line.new(x1 = x, y1 = open, x2 = x, y2 = open + syminfo.mintick, xloc = xloc.bar_time, extend = extend.both, color = lineColor, width = lineWidth, style = line.style_solid)
     array.push(lines, l)
