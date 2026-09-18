@@ -1,10 +1,12 @@
 //@version=6
-indicator("Key Opens — NY (UTC-4) — today only", overlay = true, max_lines_count = 20, max_labels_count = 20)
+indicator("Key Opens — NY (UTC-4)", overlay = true, max_lines_count = 20, max_labels_count = 20)
 
 // Fixed to New York clock, UTC-4.
 TZ = "UTC-4"
 
 // ── Inputs ────────────────────────────────────────────────────────────────────
+resetMode   = input.string("18:00 — futures session", "Reset at", options = ["18:00 — futures session", "00:00 — calendar day"], tooltip = "18:00 keeps all five levels alive at once: the session runs 18:00 > 00:00 > 02:00 > 06:00 > 10:00. 00:00 wipes at midnight, so the 18:00 level from the evening before is dropped.", group = "Session")
+
 lineColor   = input.color(color.new(color.white, 0), "Level color",  group = "Level")
 lineWidth   = input.int(1, "Level width", minval = 1, maxval = 4,    group = "Level")
 lineStyle   = input.string("Dashed", "Level style", options = ["Dashed", "Solid", "Dotted"], group = "Level")
@@ -24,9 +26,13 @@ h       = hour(time, TZ)
 newHour = na(h[1]) ? false : h != h[1]
 isKey   = h == 0 or h == 2 or h == 6 or h == 10 or h == 18
 
-// New calendar day on the NY clock wipes yesterday's levels: only today is drawn.
-d      = dayofmonth(time, TZ)
-newDay = na(d[1]) ? false : d != d[1]
+// ── Session reset ─────────────────────────────────────────────────────────────
+// 18:00 is the futures open, so anchoring there keeps the evening's level on the
+// chart through the next morning instead of losing it at midnight.
+d          = dayofmonth(time, TZ)
+newDay     = na(d[1]) ? false : d != d[1]
+resetAt18  = resetMode == "18:00 — futures session"
+newSession = resetAt18 ? (newHour and h == 18) : newDay
 
 validTF = timeframe.isintraday and timeframe.in_seconds() <= 3600
 barMs   = timeframe.in_seconds() * 1000
@@ -35,7 +41,8 @@ barMs   = timeframe.in_seconds() * 1000
 var line[]  lines  = array.new_line()
 var label[] labels = array.new_label()
 
-if newDay
+// Wipe first, then draw: the 18:00 bar clears the old session and opens the new.
+if newSession
     while array.size(lines) > 0
         line.delete(array.pop(lines))
     while array.size(labels) > 0
