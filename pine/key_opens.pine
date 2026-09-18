@@ -1,36 +1,62 @@
 //@version=6
-indicator("Key Opens — NY (UTC-4) — today only", overlay = true, max_lines_count = 20)
+indicator("Key Opens — NY (UTC-4) — today only", overlay = true, max_lines_count = 20, max_labels_count = 20)
 
 // Fixed to New York clock, UTC-4.
 TZ = "UTC-4"
 
-lineColor = input.color(color.new(color.white, 0), "Line color")
-lineWidth = input.int(1, "Line width", minval = 1, maxval = 4)
-snapEdge  = input.bool(true, "Snap to candle open (left edge)", tooltip = "On: line sits on the candle's opening edge. Off: line runs through the middle of the candle.")
+// ── Inputs ────────────────────────────────────────────────────────────────────
+lineColor   = input.color(color.new(color.white, 0), "Level color",  group = "Level")
+lineWidth   = input.int(1, "Level width", minval = 1, maxval = 4,    group = "Level")
+lineStyle   = input.string("Dashed", "Level style", options = ["Dashed", "Solid", "Dotted"], group = "Level")
+
+showLabel   = input.bool(true,  "Show label",                        group = "Label")
+labelColor  = input.color(#b03030, "Label color",                    group = "Label")
+labelSize   = input.string("Normal", "Label size", options = ["Tiny", "Small", "Normal", "Large"], group = "Label")
+labelOffset = input.int(6, "Label offset (bars right)", minval = 0, maxval = 50, group = "Label")
+
+showVert    = input.bool(false, "Also draw a vertical line at the open", group = "Extras")
+
+style = lineStyle == "Solid" ? line.style_solid : lineStyle == "Dotted" ? line.style_dotted : line.style_dashed
+lsize = labelSize == "Tiny" ? size.tiny : labelSize == "Small" ? size.small : labelSize == "Large" ? size.large : size.normal
 
 // ── Detect the first bar of each key hour ─────────────────────────────────────
 h       = hour(time, TZ)
 newHour = na(h[1]) ? false : h != h[1]
 isKey   = h == 0 or h == 2 or h == 6 or h == 10 or h == 18
 
-// New calendar day on the NY clock wipes yesterday's lines: only today is drawn.
+// New calendar day on the NY clock wipes yesterday's levels: only today is drawn.
 d      = dayofmonth(time, TZ)
 newDay = na(d[1]) ? false : d != d[1]
 
 validTF = timeframe.isintraday and timeframe.in_seconds() <= 3600
+barMs   = timeframe.in_seconds() * 1000
 
-// A bar's timestamp is drawn through the CENTRE of the candle, so shift back
-// half a bar to land on the opening edge.
-halfBarMs = timeframe.in_seconds() * 500
-
-// ── Draw ──────────────────────────────────────────────────────────────────────
-var line[] lines = array.new_line()
+// ── State ─────────────────────────────────────────────────────────────────────
+var line[]  lines  = array.new_line()
+var label[] labels = array.new_label()
 
 if newDay
     while array.size(lines) > 0
         line.delete(array.pop(lines))
+    while array.size(labels) > 0
+        label.delete(array.pop(labels))
 
+// ── Draw a level at the opening price of each key candle ──────────────────────
 if validTF and newHour and isKey
-    x = snapEdge ? time - halfBarMs : time
-    l = line.new(x1 = x, y1 = open, x2 = x, y2 = open + syminfo.mintick, xloc = xloc.bar_time, extend = extend.both, color = lineColor, width = lineWidth, style = line.style_solid)
+    // the open of this candle, held as a horizontal level running to the right
+    l = line.new(x1 = time, y1 = open, x2 = time + barMs, y2 = open, xloc = xloc.bar_time, extend = extend.right, color = lineColor, width = lineWidth, style = style)
     array.push(lines, l)
+
+    if showLabel
+        lb = label.new(x = time, y = open, text = str.format("[{0,number,00}:00]", h), xloc = xloc.bar_time, style = label.style_none, textcolor = labelColor, size = lsize, textalign = text.align_left)
+        array.push(labels, lb)
+
+    if showVert
+        v = line.new(x1 = time - barMs / 2, y1 = open, x2 = time - barMs / 2, y2 = open + syminfo.mintick, xloc = xloc.bar_time, extend = extend.both, color = lineColor, width = 1, style = line.style_solid)
+        array.push(lines, v)
+
+// Keep every label parked just right of the last bar, so they ride the edge.
+if barstate.islast and array.size(labels) > 0
+    x = time + labelOffset * barMs
+    for i = 0 to array.size(labels) - 1
+        label.set_x(array.get(labels, i), x)
