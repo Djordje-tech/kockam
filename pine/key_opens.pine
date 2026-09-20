@@ -1,69 +1,31 @@
 //@version=6
-indicator("Key Opens - NY (UTC-4)", overlay = true, max_lines_count = 20, max_labels_count = 20)
+indicator("Key Opens", overlay = true, max_lines_count = 20, max_labels_count = 20)
 
-// Fixed to New York clock, UTC-4.
+// Opening price of the 18:00, 00:00, 02:00, 06:00 and 10:00 candles,
+// New York clock (UTC-4), held as horizontal levels.
 TZ = "UTC-4"
 
-// -- Inputs --------------------------------------------------------------------
-resetMode   = input.string("18:00 - futures session", "Reset at", options = ["18:00 - futures session", "00:00 - calendar day"], tooltip = "18:00 keeps all five levels alive at once: the session runs 18:00 > 00:00 > 02:00 > 06:00 > 10:00. 00:00 wipes at midnight, so the 18:00 level from the evening before is dropped.", group = "Session")
-
-lineColor   = input.color(color.new(color.white, 0), "Level color",  group = "Level")
-lineWidth   = input.int(1, "Level width", minval = 1, maxval = 4,    group = "Level")
-lineStyle   = input.string("Dashed", "Level style", options = ["Dashed", "Solid", "Dotted"], group = "Level")
-
-showLabel   = input.bool(true,  "Show label",                        group = "Label")
-labelColor  = input.color(#b03030, "Label color",                    group = "Label")
-labelSize   = input.string("Normal", "Label size", options = ["Tiny", "Small", "Normal", "Large"], group = "Label")
-labelOffset = input.int(6, "Label offset (bars right)", minval = 0, maxval = 50, group = "Label")
-
-showVert    = input.bool(false, "Also draw a vertical line at the open", group = "Extras")
-
-style = lineStyle == "Solid" ? line.style_solid : lineStyle == "Dotted" ? line.style_dotted : line.style_dashed
-lsize = labelSize == "Tiny" ? size.tiny : labelSize == "Small" ? size.small : labelSize == "Large" ? size.large : size.normal
-
-// -- Detect the first bar of each key hour -------------------------------------
 h       = hour(time, TZ)
 newHour = na(h[1]) ? false : h != h[1]
-isKey   = h == 0 or h == 2 or h == 6 or h == 10 or h == 18
+isKey   = h == 18 or h == 0 or h == 2 or h == 6 or h == 10
 
-// -- Session reset -------------------------------------------------------------
-// 18:00 is the futures open, so anchoring there keeps the evening's level on the
-// chart through the next morning instead of losing it at midnight.
-d          = dayofmonth(time, TZ)
-newDay     = na(d[1]) ? false : d != d[1]
-resetAt18  = resetMode == "18:00 - futures session"
-newSession = resetAt18 ? (newHour and h == 18) : newDay
+barMs = timeframe.in_seconds() * 1000
 
-validTF = timeframe.isintraday and timeframe.in_seconds() <= 3600
-barMs   = timeframe.in_seconds() * 1000
-
-// -- State ---------------------------------------------------------------------
 var line[]  lines  = array.new_line()
 var label[] labels = array.new_label()
 
-// Wipe first, then draw: the 18:00 bar clears the old session and opens the new.
-if newSession
+// 18:00 opens the futures day: clear the old session, then draw its own level.
+if newHour and h == 18
     while array.size(lines) > 0
         line.delete(array.pop(lines))
     while array.size(labels) > 0
         label.delete(array.pop(labels))
 
-// -- Draw a level at the opening price of each key candle ----------------------
-if validTF and newHour and isKey
-    // the open of this candle, held as a horizontal level running to the right
-    l = line.new(x1 = time, y1 = open, x2 = time + barMs, y2 = open, xloc = xloc.bar_time, extend = extend.right, color = lineColor, width = lineWidth, style = style)
-    array.push(lines, l)
+if newHour and isKey
+    array.push(lines, line.new(time, open, time + barMs, open, xloc = xloc.bar_time, extend = extend.right, color = color.white, width = 1, style = line.style_dashed))
+    array.push(labels, label.new(time, open, str.format("[{0,number,00}:00]", h), xloc = xloc.bar_time, style = label.style_none, textcolor = #b03030, size = size.normal))
 
-    if showLabel
-        lb = label.new(x = time, y = open, text = str.format("[{0,number,00}:00]", h), xloc = xloc.bar_time, style = label.style_none, textcolor = labelColor, size = lsize, textalign = text.align_left)
-        array.push(labels, lb)
-
-    if showVert
-        v = line.new(x1 = time - barMs / 2, y1 = open, x2 = time - barMs / 2, y2 = open + syminfo.mintick, xloc = xloc.bar_time, extend = extend.both, color = lineColor, width = 1, style = line.style_solid)
-        array.push(lines, v)
-
-// Keep every label parked just right of the last bar, so they ride the edge.
-if barstate.islast and array.size(labels) > 0
-    x = time + labelOffset * barMs
+// Park the labels just right of the last bar so they ride the edge.
+if barstate.islast
     for i = 0 to array.size(labels) - 1
-        label.set_x(array.get(labels, i), x)
+        label.set_x(array.get(labels, i), time + 6 * barMs)
